@@ -5,6 +5,7 @@ export type AdminUser = {
   id: string
   name: string
   email: string
+  title: string
   avatarColor: string
 }
 
@@ -12,6 +13,7 @@ export type CompanyInfo = {
   id: string
   name: string
   domain: string
+  joinCode: string
   plan: string
   seats: number
   subscriptionStatus: string
@@ -84,4 +86,47 @@ export type DashboardData = {
   privacyNote: string
 }
 
-export type TabKey = 'overview' | 'challenge' | 'teams' | 'history'
+export type TabKey = 'overview' | 'challenge' | 'teams' | 'employees' | 'settings' | 'history'
+
+// Employee directory item (PRIVACY SHIELD: directory only — no focus data)
+export type EmployeeDirectoryItem = {
+  id: string
+  name: string
+  email: string
+  title: string
+  role: 'COMPANY_ADMIN' | 'EMPLOYEE'
+  avatarColor: string
+  active: boolean
+  teamId: string | null
+  createdAt: string
+  team: { id: string; name: string; color: string } | null
+}
+
+export type EmployeesResponse = {
+  employees: EmployeeDirectoryItem[]
+  seats: number
+  employeeCount: number
+}
+
+export type TeamManageItem = {
+  id: string
+  name: string
+  color: string
+  memberCount: number
+  createdAt: string
+}
+
+export type TeamsManageResponse = {
+  teams: TeamManageItem[]
+}
+
+export const TEAM_COLORS = [
+  'emerald',
+  'amber',
+  'rose',
+  'sky',
+  'violet',
+  'orange',
+] as const
+
+export type TeamColor = (typeof TEAM_COLORS)[number]

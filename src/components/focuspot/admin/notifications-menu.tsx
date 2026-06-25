@@ -1,8 +1,10 @@
 'use client'
 
-import { Bell, Check } from 'lucide-react'
+import { useState } from 'react'
+import { Bell, Check, Loader2 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { motion, AnimatePresence } from 'framer-motion'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -23,11 +25,48 @@ const typeColor: Record<string, string> = {
 export function NotificationsMenu({
   notifications,
   onMarkAllRead,
+  onMarkRead,
 }: {
   notifications: AdminNotification[]
   onMarkAllRead: () => void
+  onMarkRead: (id: string) => void
 }) {
   const unread = notifications.filter((n) => !n.read).length
+  const [markingAll, setMarkingAll] = useState(false)
+  const [pendingId, setPendingId] = useState<string | null>(null)
+
+  const handleMarkAll = async () => {
+    if (markingAll || unread === 0) return
+    setMarkingAll(true)
+    try {
+      const res = await fetch('/api/notifications/read-all', { method: 'POST' })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(j.error || 'Failed to mark all as read')
+      onMarkAllRead()
+      toast.success(
+        `Marked ${j.updated ?? unread} notification${(j.updated ?? unread) === 1 ? '' : 's'} as read`
+      )
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to mark notifications as read')
+    } finally {
+      setMarkingAll(false)
+    }
+  }
+
+  const handleClick = async (n: AdminNotification) => {
+    if (n.read || pendingId) return
+    setPendingId(n.id)
+    try {
+      const res = await fetch(`/api/notifications/${n.id}/read`, { method: 'PATCH' })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(j.error || 'Failed to mark as read')
+      onMarkRead(n.id)
+    } catch {
+      // silent — toast inside parent if desired
+    } finally {
+      setPendingId(null)
+    }
+  }
 
   return (
     <DropdownMenu>
@@ -58,10 +97,19 @@ export function NotificationsMenu({
           <span className="text-sm font-semibold">Notifications</span>
           {unread > 0 && (
             <button
-              onClick={onMarkAllRead}
-              className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
+              onClick={handleMarkAll}
+              disabled={markingAll}
+              className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 disabled:opacity-50"
             >
-              <Check className="w-3 h-3" /> Mark all read
+              {markingAll ? (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin" /> Marking…
+                </>
+              ) : (
+                <>
+                  <Check className="w-3 h-3" /> Mark all read
+                </>
+              )}
             </button>
           )}
         </div>
@@ -71,40 +119,48 @@ export function NotificationsMenu({
               You&apos;re all caught up
             </div>
           ) : (
-            notifications.map((n) => (
-              <div
-                key={n.id}
-                className={`px-3 py-3 border-b border-border/40 last:border-0 hover:bg-muted/50 transition-colors ${
-                  !n.read ? 'bg-emerald-50/40 dark:bg-emerald-950/20' : ''
-                }`}
-              >
-                <div className="flex items-start gap-2.5">
-                  <span
-                    className={`mt-0.5 shrink-0 w-2 h-2 rounded-full ${
-                      !n.read ? 'bg-emerald-500' : 'bg-transparent'
-                    }`}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-medium leading-tight">{n.title}</p>
-                      {n.type && (
-                        <span
-                          className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                            typeColor[n.type] || typeColor.INFO
-                          }`}
-                        >
-                          {n.type}
-                        </span>
-                      )}
+            notifications.map((n) => {
+              const isPending = pendingId === n.id
+              return (
+                <button
+                  key={n.id}
+                  onClick={() => handleClick(n)}
+                  disabled={n.read || isPending}
+                  className={`w-full text-left px-3 py-3 border-b border-border/40 last:border-0 hover:bg-muted/50 transition-colors disabled:cursor-default ${
+                    !n.read ? 'bg-emerald-50/40 dark:bg-emerald-950/20' : ''
+                  }`}
+                >
+                  <div className="flex items-start gap-2.5">
+                    <span
+                      className={`mt-0.5 shrink-0 w-2 h-2 rounded-full ${
+                        !n.read ? 'bg-emerald-500' : 'bg-transparent'
+                      }`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-medium leading-tight">{n.title}</p>
+                        {n.type && (
+                          <span
+                            className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                              typeColor[n.type] || typeColor.INFO
+                            }`}
+                          >
+                            {n.type}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{n.message}</p>
+                      <p className="text-[11px] text-muted-foreground/70 mt-1">
+                        {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true })}
+                      </p>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{n.message}</p>
-                    <p className="text-[11px] text-muted-foreground/70 mt-1">
-                      {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true })}
-                    </p>
+                    {isPending && (
+                      <Loader2 className="w-3 h-3 animate-spin text-muted-foreground shrink-0 mt-1" />
+                    )}
                   </div>
-                </div>
-              </div>
-            ))
+                </button>
+              )
+            })
           )}
         </div>
         <DropdownMenuSeparator />

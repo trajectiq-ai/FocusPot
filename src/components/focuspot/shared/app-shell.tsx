@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { useAuthStore } from '@/lib/store'
 import { getColor, getInitials } from '@/lib/colors'
 import { Button } from '@/components/ui/button'
@@ -10,8 +11,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { LogOut, ChevronDown } from 'lucide-react'
+import { LogOut, ChevronDown, Settings } from 'lucide-react'
 import { toast } from 'sonner'
+import { ProfileDialog } from '@/components/focuspot/employee/profile-dialog'
 
 const roleLabels: Record<string, { label: string; color: string }> = {
   SUPER_ADMIN: { label: 'Super Admin', color: 'violet' },
@@ -27,6 +29,7 @@ export function AppShell({
   nav?: React.ReactNode
 }) {
   const { user, logout } = useAuthStore()
+  const [profileOpen, setProfileOpen] = useState(false)
 
   const handleLogout = async () => {
     await logout()
@@ -75,6 +78,15 @@ export function AppShell({
                 <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
               </div>
               <DropdownMenuSeparator />
+              {user?.role === 'EMPLOYEE' && (
+                <DropdownMenuItem
+                  onClick={() => setProfileOpen(true)}
+                  className="cursor-pointer"
+                >
+                  <Settings className="w-4 h-4 mr-2" />
+                  Profile &amp; Settings
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive cursor-pointer">
                 <LogOut className="w-4 h-4 mr-2" />
                 Sign out
@@ -107,6 +119,11 @@ export function AppShell({
           </div>
         </div>
       </footer>
+
+      {/* Employee profile & settings dialog */}
+      {user?.role === 'EMPLOYEE' && (
+        <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
+      )}
     </div>
   )
 }

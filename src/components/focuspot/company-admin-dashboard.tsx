@@ -1,7 +1,7 @@
 'use client'
 
 // Company Admin (HR Manager) dashboard — FocusPot B2B SaaS.
-// Built by Task 4-b. Fetches anonymous aggregates from /api/admin/dashboard.
+// Built by Task 4-b. Enhanced by Task P2-b with Employees + Settings tabs.
 
 import { useCallback, useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   Trophy,
   Users,
+  Settings,
   History,
   RefreshCw,
   ShieldCheck,
@@ -19,19 +20,22 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getColor, getInitials } from '@/lib/colors'
 import { useAuthStore } from '@/lib/store'
-import { toast } from 'sonner'
 
 import { NotificationsMenu } from './admin/notifications-menu'
 import { OverviewTab } from './admin/overview-tab'
 import { ChallengeTab } from './admin/challenge-tab'
 import { TeamsTab } from './admin/teams-tab'
 import { HistoryTab } from './admin/history-tab'
+import { EmployeesTab } from './admin/employees-tab'
+import { SettingsTab } from './admin/settings-tab'
 import type { DashboardData, TabKey } from './admin/types'
 
 const TABS: { key: TabKey; label: string; icon: typeof LayoutDashboard }[] = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
   { key: 'challenge', label: 'Challenge', icon: Trophy },
   { key: 'teams', label: 'Teams', icon: Users },
+  { key: 'employees', label: 'Employees', icon: Users },
+  { key: 'settings', label: 'Settings', icon: Settings },
   { key: 'history', label: 'History', icon: History },
 ]
 
@@ -77,7 +81,18 @@ export function CompanyAdminDashboard() {
         notifications: prev.notifications.map((n) => ({ ...n, read: true })),
       }
     })
-    toast.success('All notifications marked as read')
+  }, [])
+
+  const handleMarkRead = useCallback((id: string) => {
+    setData((prev) => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        notifications: prev.notifications.map((n) =>
+          n.id === id ? { ...n, read: true } : n
+        ),
+      }
+    })
   }, [])
 
   const nav = (
@@ -92,11 +107,21 @@ export function CompanyAdminDashboard() {
         />
       ))}
       <div className="hidden md:flex items-center pl-2 ml-1 border-l border-border/60">
-        {data && <NotificationsMenu notifications={data.notifications} onMarkAllRead={handleMarkAllRead} />}
+        {data && (
+          <NotificationsMenu
+            notifications={data.notifications}
+            onMarkAllRead={handleMarkAllRead}
+            onMarkRead={handleMarkRead}
+          />
+        )}
       </div>
       {data && (
         <div className="md:hidden ml-1">
-          <NotificationsMenu notifications={data.notifications} onMarkAllRead={handleMarkAllRead} />
+          <NotificationsMenu
+            notifications={data.notifications}
+            onMarkAllRead={handleMarkAllRead}
+            onMarkRead={handleMarkRead}
+          />
         </div>
       )}
     </>
@@ -161,7 +186,17 @@ export function CompanyAdminDashboard() {
                 <OverviewTab data={data} onGoToChallenge={() => setActiveTab('challenge')} />
               )}
               {activeTab === 'challenge' && <ChallengeTab data={data} onRefresh={handleRefresh} />}
-              {activeTab === 'teams' && <TeamsTab data={data} />}
+              {activeTab === 'teams' && <TeamsTab data={data} onRefresh={handleRefresh} />}
+              {activeTab === 'employees' && (
+                <EmployeesTab onRefresh={handleRefresh} adminId={data.admin.id} />
+              )}
+              {activeTab === 'settings' && (
+                <SettingsTab
+                  company={data.company}
+                  totalEmployees={data.totalEmployees}
+                  onRefresh={handleRefresh}
+                />
+              )}
               {activeTab === 'history' && <HistoryTab challenges={data.completedChallenges} />}
             </motion.div>
           </AnimatePresence>
@@ -212,4 +247,5 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
     </div>
   )
 }
+
 

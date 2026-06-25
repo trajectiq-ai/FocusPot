@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   Bar,
@@ -12,10 +12,26 @@ import {
   YAxis,
   LabelList,
 } from 'recharts'
-import { Lock, Users, Clock, Zap, Crown, Shield } from 'lucide-react'
+import { toast } from 'sonner'
+import {
+  Lock,
+  Users,
+  Clock,
+  Zap,
+  Crown,
+  Shield,
+  Plus,
+  Pencil,
+  Trash2,
+  Loader2,
+  Check,
+} from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Table,
   TableBody,
@@ -24,8 +40,27 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { getColor } from '@/lib/colors'
-import type { DashboardData, TeamStat } from './types'
+import type { DashboardData, TeamManageItem, TeamStat, TeamColor } from './types'
+import { TEAM_COLORS } from './types'
 
 // Hex map for chart fills (since recharts can't take Tailwind classes)
 const TEAM_HEX: Record<string, string> = {
@@ -60,13 +95,70 @@ function CustomBarTooltip({ active, payload }: any) {
   )
 }
 
-export function TeamsTab({ data }: { data: DashboardData }) {
+export function TeamsTab({
+  data,
+  onRefresh,
+}: {
+  data: DashboardData
+  onRefresh: () => void
+}) {
   const ranked = useMemo(
     () => [...data.teamStats].sort((a, b) => b.totalHours - a.totalHours),
     [data.teamStats]
   )
   const maxHours = Math.max(1, ...ranked.map((t) => t.totalHours))
   const leader = ranked[0]
+
+  // Management state — fetch live teams for CRUD controls
+  const [manageTeams, setManageTeams] = useState<TeamManageItem[]>([])
+  const [createOpen, setCreateOpen] = useState(false)
+  const [editTeam, setEditTeam] = useState<TeamManageItem | null>(null)
+  const [deleteTeam, setDeleteTeam] = useState<TeamManageItem | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  const fetchTeams = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/teams', { cache: 'no-store' })
+      if (res.ok) {
+        const j = await res.json()
+        setManageTeams(j.teams || [])
+      }
+    } catch {
+      // silent — analytics still render
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchTeams()
+  }, [fetchTeams])
+
+  // Find oldest team (by createdAt) for the "members reassigned to" hint on delete
+  const oldestTeam = useMemo(() => {
+    if (manageTeams.length <= 1) return null
+    return [...manageTeams].sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    )[0]
+  }, [manageTeams])
+
+  const handleDelete = async () => {
+    if (!deleteTeam) return
+    setSubmitting(true)
+    try {
+      const res = await fetch(`/api/admin/teams/${deleteTeam.id}`, { method: 'DELETE' })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(j.error || 'Failed to delete team')
+      toast.success(
+        `Team deleted${j.reassignedTo ? `, members reassigned to ${j.reassignedTo}` : ''}`
+      )
+      setDeleteTeam(null)
+      await fetchTeams()
+      onRefresh()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to delete team')
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -91,11 +183,19 @@ export function TeamsTab({ data }: { data: DashboardData }) {
             Ranked by total focus hours during the active challenge.
           </p>
         </div>
-        {leader && (
-          <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
-            <Crown className="w-3.5 h-3.5" /> Leading: {leader.teamName}
-          </Badge>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {leader && (
+            <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+              <Crown className="w-3.5 h-3.5" /> Leading: {leader.teamName}
+            </Badge>
+          )}
+          <Button
+            onClick={() => setCreateOpen(true)}
+            className="bg-emerald-600 hover:bg-emerald-700"
+          >
+            <Plus className="w-4 h-4" /> Create Team
+          </Button>
+        </div>
       </div>
 
       {/* Horizontal bar chart */}
@@ -151,18 +251,29 @@ export function TeamsTab({ data }: { data: DashboardData }) {
         </Card>
       )}
 
-      {/* Team cards grid */}
+      {/* Team cards grid with management controls */}
       {ranked.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="py-12 text-center text-sm text-muted-foreground">
-            No teams yet.
+            No teams yet. Create one to get started.
           </CardContent>
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {ranked.map((team, idx) => (
-            <TeamCard key={team.teamId} team={team} rank={idx + 1} maxHours={maxHours} delay={idx * 0.05} />
-          ))}
+          {ranked.map((team, idx) => {
+            const manageTeam = manageTeams.find((t) => t.id === team.teamId) || null
+            return (
+              <TeamCard
+                key={team.teamId}
+                team={team}
+                rank={idx + 1}
+                maxHours={maxHours}
+                delay={idx * 0.05}
+                onEdit={manageTeam ? () => setEditTeam(manageTeam) : null}
+                onDelete={manageTeam ? () => setDeleteTeam(manageTeam) : null}
+              />
+            )
+          })}
         </div>
       )}
 
@@ -234,6 +345,74 @@ export function TeamsTab({ data }: { data: DashboardData }) {
           </CardContent>
         </Card>
       )}
+
+      {/* Create Team dialog */}
+      <TeamFormDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        mode="create"
+        onSaved={async () => {
+          setCreateOpen(false)
+          await fetchTeams()
+          onRefresh()
+        }}
+      />
+
+      {/* Edit Team dialog */}
+      <TeamFormDialog
+        open={!!editTeam}
+        onOpenChange={(v) => !v && setEditTeam(null)}
+        mode="edit"
+        team={editTeam}
+        onSaved={async () => {
+          setEditTeam(null)
+          await fetchTeams()
+          onRefresh()
+        }}
+      />
+
+      {/* Delete confirm */}
+      <AlertDialog open={!!deleteTeam} onOpenChange={(v) => !v && setDeleteTeam(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-rose-500" /> Delete team &quot;{deleteTeam?.name}&quot;?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove the team. {deleteTeam && oldestTeam && oldestTeam.id !== deleteTeam.id ? (
+                <>
+                  Members will be reassigned to{' '}
+                  <span className="font-semibold text-foreground">{oldestTeam.name}</span>.
+                </>
+              ) : (
+                <>You&apos;ll need at least one other team before this one can be deleted.</>
+              )}{' '}
+              Team analytics for this team will disappear from the dashboard.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={submitting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-rose-600 hover:bg-rose-700 text-white"
+              onClick={async (e) => {
+                e.preventDefault()
+                await handleDelete()
+              }}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Deleting…
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4" /> Delete team
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
@@ -243,11 +422,15 @@ function TeamCard({
   rank,
   maxHours,
   delay,
+  onEdit,
+  onDelete,
 }: {
   team: TeamStat
   rank: number
   maxHours: number
   delay: number
+  onEdit: (() => void) | null
+  onDelete: (() => void) | null
 }) {
   const c = getColor(team.teamColor)
   const isLeader = rank === 1
@@ -284,15 +467,39 @@ function TeamCard({
                 </CardDescription>
               </div>
             </div>
-            <Badge
-              className={
-                isLeader
-                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'
-                  : 'bg-muted text-muted-foreground'
-              }
-            >
-              #{rank}
-            </Badge>
+            <div className="flex items-center gap-1 shrink-0">
+              <Badge
+                className={
+                  isLeader
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'
+                    : 'bg-muted text-muted-foreground'
+                }
+              >
+                #{rank}
+              </Badge>
+              {onEdit && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  onClick={onEdit}
+                  aria-label={`Edit ${team.teamName}`}
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </Button>
+              )}
+              {onDelete && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-rose-600"
+                  onClick={onDelete}
+                  aria-label={`Delete ${team.teamName}`}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-3 pt-0">
@@ -353,3 +560,130 @@ function Stat({
     </div>
   )
 }
+
+function TeamFormDialog({
+  open,
+  onOpenChange,
+  mode,
+  team,
+  onSaved,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  mode: 'create' | 'edit'
+  team?: TeamManageItem | null
+  onSaved: () => void
+}) {
+  const [name, setName] = useState('')
+  const [color, setColor] = useState<TeamColor>('emerald')
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setName(team?.name || '')
+      setColor((team?.color as TeamColor) || 'emerald')
+    }
+  }, [open, team])
+
+  const submit = async () => {
+    if (!name.trim() || name.trim().length < 2) {
+      toast.error('Team name must be at least 2 characters')
+      return
+    }
+    setSubmitting(true)
+    try {
+      const url = mode === 'create' ? '/api/admin/teams' : `/api/admin/teams/${team?.id}`
+      const method = mode === 'create' ? 'POST' : 'PATCH'
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), color }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(j.error || 'Failed to save team')
+      toast.success(mode === 'create' ? 'Team created' : 'Team updated')
+      onSaved()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save team')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <span className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+              {mode === 'create' ? <Plus className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
+            </span>
+            {mode === 'create' ? 'Create Team' : 'Edit Team'}
+          </DialogTitle>
+          <DialogDescription>
+            {mode === 'create'
+              ? 'Add a new team to your company workspace.'
+              : 'Update the team name or color.'}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="team-name">Team name</Label>
+            <Input
+              id="team-name"
+              placeholder="e.g. Product Engineering"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={50}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Team color</Label>
+            <div className="grid grid-cols-6 gap-2">
+              {TEAM_COLORS.map((c) => {
+                const cc = getColor(c)
+                const selected = color === c
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setColor(c)}
+                    aria-label={`Color ${c}`}
+                    className={`relative h-10 rounded-lg ${cc.bg} transition-all ${
+                      selected
+                        ? 'ring-2 ring-offset-2 ring-offset-background ring-foreground'
+                        : 'hover:opacity-90 opacity-80'
+                    }`}
+                  >
+                    {selected && (
+                      <Check className="absolute inset-0 m-auto w-4 h-4 text-white" />
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={submitting} className="bg-emerald-600 hover:bg-emerald-700">
+            {submitting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : mode === 'create' ? (
+              <>
+                <Plus className="w-4 h-4" /> Create
+              </>
+            ) : (
+              <>
+                <Check className="w-4 h-4" /> Save
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+

@@ -19,6 +19,10 @@ export async function GET() {
     },
   })
 
+  if (!user || !user.active) {
+    return NextResponse.json({ error: 'Account is not active' }, { status: 403 })
+  }
+
   if (!user || !user.companyId || !user.teamId) {
     return NextResponse.json({ error: 'Incomplete profile' }, { status: 400 })
   }
@@ -62,6 +66,7 @@ export async function GET() {
       id: user.id,
       name: user.name,
       email: user.email,
+      title: user.title,
       avatarColor: user.avatarColor,
       streak: user.streak,
       bestStreak: user.bestStreak,

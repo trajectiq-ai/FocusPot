@@ -17,9 +17,10 @@ export async function GET() {
       id: true,
       name: true,
       email: true,
+      title: true,
       avatarColor: true,
       companyId: true,
-      company: { select: { id: true, name: true, domain: true, plan: true, seats: true, subscriptionStatus: true, monthlyRevenue: true } },
+      company: { select: { id: true, name: true, domain: true, joinCode: true, plan: true, seats: true, subscriptionStatus: true, monthlyRevenue: true } },
     },
   })
 

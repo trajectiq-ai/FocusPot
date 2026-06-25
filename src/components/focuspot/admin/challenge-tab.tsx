@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { format } from 'date-fns'
+import { toast } from 'sonner'
 import {
   Trophy,
   Plus,
@@ -12,12 +13,27 @@ import {
   Sparkles,
   AlertTriangle,
   Users,
+  Trash2,
+  Crown,
+  Loader2,
+  History,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import type { ActiveChallenge, DashboardData } from './types'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { getColor } from '@/lib/colors'
+import type { ActiveChallenge, CompletedChallenge, DashboardData } from './types'
 import { CreateChallengeDialog } from './create-challenge-dialog'
 import { EndChallengeDialog } from './end-challenge-dialog'
 
@@ -30,6 +46,8 @@ export function ChallengeTab({
 }) {
   const [createOpen, setCreateOpen] = useState(false)
   const [endOpen, setEndOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<CompletedChallenge | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const active = data.activeChallenge
 
   const start = active ? new Date(active.startDate) : null
@@ -40,6 +58,25 @@ export function ChallengeTab({
     if (end.getTime() <= start.getTime()) return 100
     return Math.min(100, Math.max(0, ((now - start.getTime()) / (end.getTime() - start.getTime())) * 100))
   })()
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/admin/challenges/${deleteTarget.id}`, {
+        method: 'DELETE',
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(j.error || 'Failed to delete challenge')
+      toast.success('Challenge deleted')
+      setDeleteTarget(null)
+      onRefresh()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to delete challenge')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -204,6 +241,79 @@ export function ChallengeTab({
         </motion.div>
       )}
 
+      {/* Completed challenges with delete option */}
+      {data.completedChallenges.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <History className="w-4 h-4 text-muted-foreground" />
+            <h3 className="text-sm font-semibold">Past Challenges</h3>
+            <span className="text-xs text-muted-foreground">
+              ({data.completedChallenges.length})
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {data.completedChallenges.map((ch) => {
+              const winner = ch.winnerTeam
+              const winnerColor = winner ? getColor(winner.color) : null
+              const startD = new Date(ch.startDate)
+              const endD = new Date(ch.endDate)
+              return (
+                <Card key={ch.id} className="overflow-hidden">
+                  <div className="h-1 bg-gradient-to-r from-emerald-400 via-emerald-500 to-teal-500" />
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="shrink-0 w-9 h-9 rounded-lg bg-muted/60 flex items-center justify-center">
+                          <Trophy className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold truncate">{ch.name}</p>
+                          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                            <Clock className="w-3 h-3" />
+                            {format(startD, 'MMM d')} → {format(endD, 'MMM d, yyyy')}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-rose-600"
+                        onClick={() => setDeleteTarget(ch)}
+                        aria-label={`Delete ${ch.name}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap mt-3">
+                      {winner ? (
+                        <Badge
+                          variant="outline"
+                          className="gap-1.5 bg-amber-50 dark:bg-amber-950/30 border-amber-200/60 dark:border-amber-800/40 text-amber-800 dark:text-amber-300"
+                        >
+                          <Crown className="w-3 h-3 text-amber-500" />
+                          <span className={`w-2 h-2 rounded-full ${winnerColor?.dot}`} />
+                          {winner.name}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-muted-foreground">
+                          No winner
+                        </Badge>
+                      )}
+                      <Badge variant="secondary" className="text-[10px]">
+                        <Gift className="w-3 h-3" /> {ch.prize}
+                      </Badge>
+                      <Badge variant="outline" className="text-[10px]">
+                        Completed
+                      </Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       <CreateChallengeDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
@@ -215,6 +325,46 @@ export function ChallengeTab({
         onOpenChange={setEndOpen}
         onEnded={onRefresh}
       />
+
+      {/* Delete challenge confirm */}
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(v) => !v && setDeleteTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-rose-500" /> Delete challenge?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes{' '}
+              <span className="font-semibold text-foreground">{deleteTarget?.name}</span> and all
+              focus sessions logged against it. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-rose-600 hover:bg-rose-700 text-white"
+              onClick={async (e) => {
+                e.preventDefault()
+                await handleDelete()
+              }}
+              disabled={deleting}
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Deleting…
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4" /> Delete permanently
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

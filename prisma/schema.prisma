@@ -16,10 +16,12 @@ model User {
   email        String   @unique
   name         String
   password     String   @default("demo")
+  title        String   @default("") // job title, e.g. "Senior Designer"
   role         String   @default("EMPLOYEE") // SUPER_ADMIN | COMPANY_ADMIN | EMPLOYEE
   companyId    String?
   teamId       String?
   avatarColor  String   @default("emerald")
+  active       Boolean  @default(true) // soft-delete / deactivation
   streak       Int      @default(0)
   bestStreak   Int      @default(0)
   lastFocusDate String?  // ISO date string (YYYY-MM-DD)
@@ -36,12 +38,14 @@ model User {
   @@index([companyId])
   @@index([teamId])
   @@index([role])
+  @@index([active])
 }
 
 model Company {
   id                String   @id @default(cuid())
   name              String
   domain            String   @unique
+  joinCode          String   @unique // employees use this to join the workspace
   plan              String   @default("STARTER") // STARTER ($99/50) | GROWTH ($199/200)
   seats             Int      @default(50)
   subscriptionStatus String  @default("ACTIVE") // ACTIVE | PAST_DUE | CANCELED

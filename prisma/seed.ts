@@ -1,4 +1,5 @@
 import { db } from '../src/lib/db'
+import { hashPassword, generateJoinCode } from '../src/lib/password'
 
 async function main() {
   // Clean existing data
@@ -11,12 +12,14 @@ async function main() {
 
   console.log('Seeding FocusPot database...')
 
+  const DEMO_HASH = hashPassword('demo')
+
   // ===== SUPER ADMIN =====
   const superAdmin = await db.user.create({
     data: {
       email: 'sree@focuspot.io',
       name: 'Sree (Super Admin)',
-      password: 'demo',
+      password: DEMO_HASH,
       role: 'SUPER_ADMIN',
       avatarColor: 'violet',
     },
@@ -28,6 +31,7 @@ async function main() {
       data: {
         name: 'Northwind Labs',
         domain: 'northwindlabs.com',
+        joinCode: 'NORTHWIND-7K2M',
         plan: 'GROWTH',
         seats: 200,
         subscriptionStatus: 'ACTIVE',
@@ -38,6 +42,7 @@ async function main() {
       data: {
         name: 'Acme Corp',
         domain: 'acme.com',
+        joinCode: 'ACMECORP-3F9P',
         plan: 'STARTER',
         seats: 50,
         subscriptionStatus: 'ACTIVE',
@@ -48,6 +53,7 @@ async function main() {
       data: {
         name: 'Brightside Studio',
         domain: 'brightside.studio',
+        joinCode: 'BRIGHT-5H8X',
         plan: 'STARTER',
         seats: 50,
         subscriptionStatus: 'PAST_DUE',
@@ -58,6 +64,7 @@ async function main() {
       data: {
         name: 'Quantum Forge',
         domain: 'quantumforge.io',
+        joinCode: 'QUANTUM-2D4T',
         plan: 'GROWTH',
         seats: 200,
         subscriptionStatus: 'ACTIVE',
@@ -68,6 +75,7 @@ async function main() {
       data: {
         name: 'Pixel & Co',
         domain: 'pixelandco.design',
+        joinCode: 'PIXELCO-9R1W',
         plan: 'STARTER',
         seats: 50,
         subscriptionStatus: 'CANCELED',
@@ -111,7 +119,8 @@ async function main() {
       data: {
         email: 'hr@northwindlabs.com',
         name: 'Dana Whitfield',
-        password: 'demo',
+        password: DEMO_HASH,
+        title: 'Head of People',
         role: 'COMPANY_ADMIN',
         companyId: northwind.id,
         avatarColor: 'amber',
@@ -121,7 +130,8 @@ async function main() {
       data: {
         email: 'ops@acme.com',
         name: 'Marcus Lee',
-        password: 'demo',
+        password: DEMO_HASH,
+        title: 'Operations Manager',
         role: 'COMPANY_ADMIN',
         companyId: acme.id,
         avatarColor: 'sky',
@@ -131,7 +141,8 @@ async function main() {
       data: {
         email: 'hr@brightside.studio',
         name: 'Priya Nair',
-        password: 'demo',
+        password: DEMO_HASH,
+        title: 'Studio Manager',
         role: 'COMPANY_ADMIN',
         companyId: brightside.id,
         avatarColor: 'rose',
@@ -188,7 +199,8 @@ async function main() {
         data: {
           email: `${fn.toLowerCase()}.${ln.toLowerCase()}@${t.companyId === northwind.id ? 'northwindlabs' : t.companyId === acme.id ? 'acme' : t.companyId === brightside.id ? 'brightside.studio' : 'quantumforge'}.com`,
           name: `${fn} ${ln}`,
-          password: 'demo',
+          password: DEMO_HASH,
+          title: ['Designer', 'Engineer', 'Strategist', 'Analyst', 'Lead'][i % 5],
           role: 'EMPLOYEE',
           companyId: def.companyId,
           teamId: def.teamId,
