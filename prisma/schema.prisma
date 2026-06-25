@@ -1,0 +1,133 @@
+// FocusPot - B2B Deep Work Competition Platform
+// Prisma schema for SQLite
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Three roles: SUPER_ADMIN, COMPANY_ADMIN, EMPLOYEE
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  password     String   @default("demo")
+  role         String   @default("EMPLOYEE") // SUPER_ADMIN | COMPANY_ADMIN | EMPLOYEE
+  companyId    String?
+  teamId       String?
+  avatarColor  String   @default("emerald")
+  streak       Int      @default(0)
+  bestStreak   Int      @default(0)
+  lastFocusDate String?  // ISO date string (YYYY-MM-DD)
+  totalFocusHours Float  @default(0)
+  totalPoints  Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company      Company? @relation(fields: [companyId], references: [id])
+  team         Team?    @relation(fields: [teamId], references: [id])
+  sessions     FocusSession[]
+  notifications Notification[]
+
+  @@index([companyId])
+  @@index([teamId])
+  @@index([role])
+}
+
+model Company {
+  id                String   @id @default(cuid())
+  name              String
+  domain            String   @unique
+  plan              String   @default("STARTER") // STARTER ($99/50) | GROWTH ($199/200)
+  seats             Int      @default(50)
+  subscriptionStatus String  @default("ACTIVE") // ACTIVE | PAST_DUE | CANCELED
+  monthlyRevenue    Int      @default(99)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  teams             Team[]
+  users             User[]
+  challenges        Challenge[]
+
+  @@index([subscriptionStatus])
+}
+
+model Team {
+  id         String   @id @default(cuid())
+  name       String
+  color      String   @default("emerald")
+  companyId  String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  company        Company    @relation(fields: [companyId], references: [id])
+  users          User[]
+  sessions       FocusSession[]
+  wonChallenges  Challenge[] @relation("ChallengeWinner")
+
+  @@index([companyId])
+}
+
+// Challenge lifecycle: DRAFT -> ACTIVE -> COMPLETED
+model Challenge {
+  id           String   @id @default(cuid())
+  name         String
+  description  String   @default("")
+  companyId    String
+  startDate    DateTime
+  endDate      DateTime
+  prize        String
+  giftCardCode String   @default("")
+  giftCardValue Int     @default(0)
+  status       String   @default("ACTIVE") // DRAFT | ACTIVE | COMPLETED
+  winnerTeamId String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company      Company  @relation(fields: [companyId], references: [id])
+  sessions     FocusSession[]
+  winnerTeam   Team?    @relation("ChallengeWinner", fields: [winnerTeamId], references: [id])
+
+  @@index([companyId])
+  @@index([status])
+}
+
+model FocusSession {
+  id              String   @id @default(cuid())
+  userId          String
+  teamId          String
+  companyId       String
+  challengeId     String?
+  startTime       DateTime
+  durationMinutes Int      @default(0)
+  points          Int      @default(0)
+  completed       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  user            User     @relation(fields: [userId], references: [id])
+  team            Team     @relation(fields: [teamId], references: [id])
+  challenge       Challenge? @relation(fields: [challengeId], references: [id])
+
+  @@index([userId])
+  @@index([teamId])
+  @@index([companyId])
+  @@index([challengeId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      String   @default("INFO") // INFO | SUCCESS | WARNING | CHALLENGE
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
