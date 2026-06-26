@@ -1,0 +1,37 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "buildCommand": "bash scripts/vercel-build.sh && next build",
+  "installCommand": "bun install",
+  "devCommand": "bun run dev",
+  "regions": ["iad1"],
+  "env": {
+    "NEXT_PUBLIC_APP_URL": "https://$VERCEL_URL"
+  },
+  "build": {
+    "env": [
+      "DATABASE_URL",
+      "SESSION_SECRET",
+      "SMTP_HOST",
+      "SMTP_PORT",
+      "SMTP_USER",
+      "SMTP_PASS",
+      "SMTP_FROM",
+      "STRIPE_SECRET_KEY",
+      "STRIPE_WEBHOOK_SECRET",
+      "CRON_SECRET",
+      "NEXT_PUBLIC_APP_URL"
+    ]
+  },
+  "functions": {
+    "app/api/**/route.ts": {
+      "maxDuration": 30
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/scheduler/run",
+      "schedule": "*/30 * * * *"
+    }
+  ]
+}
