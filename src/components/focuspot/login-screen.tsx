@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import {
-  Brain,
   Trophy,
   Shield,
   Flame,
@@ -15,12 +14,23 @@ import {
   Crown,
   Check,
   Smartphone,
+  Mail,
+  KeyRound,
+  Loader2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { useAuthStore } from '@/lib/store'
 import { toast } from 'sonner'
 import { getColor } from '@/lib/colors'
@@ -68,6 +78,7 @@ export function LoginScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('demo')
   const [loading, setLoading] = useState(false)
+  const [forgotOpen, setForgotOpen] = useState(false)
   const [demos, setDemos] = useState<{
     superAdmin: DemoAccount | null
     companyAdmin: DemoAccount | null
@@ -288,7 +299,16 @@ export function LoginScreen() {
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor="password" className="text-xs">Password</Label>
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="password" className="text-xs">Password</Label>
+                          <button
+                            type="button"
+                            onClick={() => setForgotOpen(true)}
+                            className="text-xs text-muted-foreground hover:text-primary transition-colors"
+                          >
+                            Forgot password?
+                          </button>
+                        </div>
                         <Input
                           id="password"
                           type="password"
@@ -332,7 +352,145 @@ export function LoginScreen() {
           </div>
         </div>
       </footer>
+
+      {/* Forgot-password dialog */}
+      <ForgotPasswordDialog open={forgotOpen} onOpenChange={setForgotOpen} />
     </div>
+  )
+}
+
+/* ------------------------- Forgot Password Dialog ------------------------- */
+
+function ForgotPasswordDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const [email, setEmail] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [sent, setSent] = useState(false)
+
+  // Reset to a fresh state every time the dialog is opened
+  useEffect(() => {
+    if (open) {
+      setEmail('')
+      setSent(false)
+      setLoading(false)
+    }
+  }, [open])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      toast.error('Enter a valid work email')
+      return
+    }
+    setLoading(true)
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data.error || data.message || 'Failed to send reset link')
+      }
+      setSent(true)
+      toast.success('Reset link sent — check your inbox.')
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to send reset link')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-950/50 flex items-center justify-center">
+              <KeyRound className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+            </div>
+            <DialogTitle className="text-lg">Reset your password</DialogTitle>
+          </div>
+          <DialogDescription>
+            Enter your work email and we&apos;ll send you a link to reset your password.
+          </DialogDescription>
+        </DialogHeader>
+
+        {sent ? (
+          <div className="space-y-4 py-2">
+            <div className="flex items-start gap-3 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40">
+              <Mail className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-emerald-800 dark:text-emerald-200">
+                  Check your inbox
+                </p>
+                <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-0.5">
+                  If an account exists with that email, a reset link has been sent. The link expires in 1 hour.
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700"
+                onClick={() => onOpenChange(false)}
+              >
+                Done
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4 py-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="forgot-email" className="text-xs">Work email</Label>
+              <Input
+                id="forgot-email"
+                type="email"
+                placeholder="you@company.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                autoFocus
+                required
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={loading}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="bg-emerald-600 hover:bg-emerald-700 gap-1.5"
+                disabled={loading || !email}
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Sending…
+                  </>
+                ) : (
+                  <>
+                    <Mail className="w-4 h-4" />
+                    Send Reset Link
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }
 

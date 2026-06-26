@@ -10,6 +10,7 @@ export type SessionUser = {
   companyId: string | null
   teamId: string | null
   avatarColor: string
+  emailVerified: boolean
 }
 
 type AuthState = {

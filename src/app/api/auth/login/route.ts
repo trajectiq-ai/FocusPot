@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { setSession } from '@/lib/auth'
 import { verifyPassword } from '@/lib/password'
 import { recordLoginAttempt, auditLog } from '@/lib/audit'
+import { authRateLimit } from '@/lib/rate-limit'
 import { z } from 'zod'
 
 const loginSchema = z.object({
@@ -14,6 +15,10 @@ const MAX_FAILED_ATTEMPTS = 5
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000 // 15 minutes
 
 export async function POST(req: NextRequest) {
+  // Rate limit: 10 attempts per 15 minutes per IP
+  const limited = authRateLimit(req)
+  if (limited) return limited
+
   const body = await req.json().catch(() => null)
   const parsed = loginSchema.safeParse(body)
   if (!parsed.success) {
@@ -107,5 +112,6 @@ export async function POST(req: NextRequest) {
     companyId: user.companyId,
     teamId: user.teamId,
     avatarColor: user.avatarColor,
+    emailVerified: user.emailVerified,
   })
 }

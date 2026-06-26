@@ -3,6 +3,8 @@ import { hashPassword, generateJoinCode } from '../src/lib/password'
 
 async function main() {
   // Clean existing data (all tables)
+  await db.passwordResetToken.deleteMany()
+  await db.emailVerifyToken.deleteMany()
   await db.userAchievement.deleteMany()
   await db.achievement.deleteMany()
   await db.notificationPreference.deleteMany()

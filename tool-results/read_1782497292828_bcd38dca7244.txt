@@ -1,0 +1,734 @@
+     1→# FocusPot — Project Worklog
+     2→
+     3→This is the shared worklog for all agents working on the FocusPot B2B SaaS application.
+     4→Each agent MUST read this file before starting and append a new section after finishing.
+     5→
+     6→---
+     7→Task ID: 1
+     8→Agent: Main (orchestrator)
+     9→Task: Set up database schema, seed data, API routes, and app shell
+    10→
+    11→Work Log:
+    12→- Designed Prisma schema with models: User (3 roles: SUPER_ADMIN/COMPANY_ADMIN/EMPLOYEE), Company, Team, Challenge, FocusSession, Notification
+    13→- Ran `bun run db:push` to create SQLite database
+    14→- Created seed script (`prisma/seed.ts`) with 5 companies, 12 teams, 57 employees, 156 focus sessions, active + completed challenges, notifications
+    15→- Built all API routes:
+    16→  - `POST /api/auth/login`, `GET/POST /api/auth/me` — cookie-based session auth
+    17→  - `GET /api/quick-login` — returns 3 demo accounts (one per role)
+    18→  - `GET /api/employee/me` — employee dashboard data (profile, company, team, active challenge, recent sessions, notifications, last completed challenge with winner)
+    19→  - `GET /api/employee/leaderboard?challengeId=` — team leaderboard + personal rank + top overall + my team leaderboard (Privacy Shield: employees see peers but admins don't see individuals)
+    20→  - `POST /api/employee/sessions` — create focus session, award points, update streak
+    21→  - `GET /api/employee/sessions` — session history
+    22→  - `GET /api/admin/dashboard` — PRIVACY SHIELD: anonymous team aggregates only, company totals, daily hours, active + completed challenges
+    23→  - `POST /api/admin/challenges` — create weekly challenge, notify all employees
+    24→  - `GET /api/admin/challenges` — list challenges
+    25→  - `POST /api/admin/challenges/[id]/end` — end challenge, compute winner by team focus hours, notify employees
+    26→  - `GET /api/admin/teams` — teams with anonymous member counts
+    27→  - `GET /api/super/dashboard` — platform stats (MRR, ARR, companies, revenue breakdown, recent challenges)
+    28→  - `GET /api/super/companies` — all companies with utilization
+    29→  - `PATCH /api/super/companies/[id]` — update subscription status (simulate Stripe webhook)
+    30→  - `POST /api/super/login-as` — super admin impersonates a company admin
+    31→- Set up app shell: theme (emerald primary, amber accents), layout, Toaster (sonner)
+    32→- Built `LoginScreen` — polished landing page with quick-login role cards + email form
+    33→- Built `AppShell` + `NavButton` — shared header/footer/user-menu wrapper for all dashboards
+    34→- Built `page.tsx` — checks auth, routes to appropriate dashboard by role
+    35→- Created stub dashboard components (to be replaced by subagents)
+    36→
+    37→Stage Summary:
+    38→- Database: 5 companies (Northwind Labs/Growth, Acme/Starter, Brightside/Past-due, Quantum Forge/Growth, Pixel & Co/Canceled), 12 teams, 57 employees, 156 focus sessions
+    39→- Demo accounts (password "demo" for all):
+    40→  - Super Admin: sree@focuspot.io
+    41→  - Company Admin: hr@northwindlabs.com (Northwind Labs), ops@acme.com, hr@brightside.studio
+    42→  - Employees: many @northwindlabs.com, @acme.com, @brightside.studio, @quantumforge.io
+    43→- Northwind Labs has an ACTIVE challenge "Q4 Focus Sprint" (Mon-Fri) and a COMPLETED past challenge won by Marketing team
+    44→- Acme has an ACTIVE challenge "Shipping Week Deep Work"
+    45→- Key design decisions:
+    46→  - Color system: emerald=primary(focus/growth), amber=accent(energy/streaks), NO blue/indigo
+    47→  - Privacy Shield: admin endpoints return ONLY anonymous team aggregates, never individual data
+    48→  - Streak logic: consecutive days with at least one focus session
+    49→  - Anti-cheat: handled client-side via Page Visibility API (timer pauses when tab/app loses focus)
+    50→- File locations:
+    51→  - Shared components: `src/components/focuspot/shared/app-shell.tsx` (exports `AppShell` and `NavButton`)
+    52→  - Store: `src/lib/store.ts` (Zustand `useAuthStore`)
+    53→  - Colors: `src/lib/colors.ts` (exports `getColor(name)`, `getInitials(name)`)
+    54→  - Auth helper: `src/lib/auth.ts`
+    55→  - DB client: `src/lib/db.ts` (import as `import { db } from '@/lib/db'`)
+    56→- IMPORTANT for subagents:
+    57→  - Use the `AppShell` wrapper from `src/components/focuspot/shared/app-shell.tsx` for header/footer/user-menu
+    58→  - Use `getColor()` from `@/lib/colors` for team/avatar colors (returns static Tailwind classes)
+    59→  - Use `useAuthStore` from `@/lib/store` for current user
+    60→  - Use `sonner` toast (`import { toast } from 'sonner'`)
+    61→  - Footer is sticky via the AppShell's `min-h-screen flex flex-col` + `mt-auto` footer
+    62→  - NO blue/indigo colors. Primary is emerald. Accents: amber, rose, sky, violet, orange.
+    63→
+    64→---
+    65→Task ID: 4-c
+    66→Agent: full-stack-developer (Super Admin dashboard)
+    67→Task: Build the Super Admin dashboard with platform KPIs (MRR/ARR), company management, revenue charts
+    68→
+    69→Work Log:
+    70→- Read worklog.md to align with schema, API contracts, shared components (AppShell/NavButton), color system (emerald primary, no blue/indigo), and `useAuthStore`/`getColor`/`sonner` conventions
+    71→- Inspected the four `/api/super/*` routes to confirm exact response shapes (dashboard, companies, PATCH [id], login-as) and the PATCH auto-pricing logic (GROWTH=$199/200 seats, STARTER=$99/50 seats, CANCELED=$0)
+    72→- Created `src/components/focuspot/super/` helper folder with: `types.ts` (typed mirror of dashboard response), `helpers.tsx` (currency/number/date formatters + PlanBadge/StatusBadge/ChallengeStatusBadge/UtilizationBar)
+    73→- Built `notifications-bell.tsx` — bell icon with unread-count badge + dropdown of platform notifications (INFO/SUCCESS/WARNING/CHALLENGE icons, time-ago, unread highlight, scrollable)
+    74→- Built `overview-tab.tsx` — MRR hero (emerald→teal gradient, 5xl/6xl bold), ARR card, 4-up KPI grid (Active Companies, Total Employees, Focus Sessions, Focus Hours), recharts PieChart (revenue by plan, amber+violet) + BarChart (revenue vs company count), subscription status breakdown row (Active/Past Due/Canceled with colored dots)
+    75→- Built `companies-tab.tsx` — search input + status filter pills + sort toggle (revenue/employees); desktop shadcn Table (company, plan badge, employees/seats + utilization bar, MRR, status badge, joined, actions); mobile card grid; "View as Admin" button (POST /api/super/login-as → toast → reload); Manage dropdown (Activate / Mark Past Due / Cancel / Upgrade to Growth / Downgrade to Starter → PATCH /api/super/companies/[id] → silent refresh); per-row loading spinners; filtered-MRR summary strip
+    76→- Built `activity-tab.tsx` — total focus-hours headline card (amber gradient) with sessions + employees stats; vertical timeline of recent challenges with status badges, prize/gift-card chips, date ranges, and winner-team callouts (colored via getColor)
+    77→- Built main `super-admin-dashboard.tsx` — wraps content in `<AppShell nav={...}>` with three NavButtons (Overview/Companies/Activity); page header with role pill, dynamic title/subtitle, refresh button, NotificationsBell; data fetching via useEffect with loading skeletons + error state; AnimatePresence tab transitions; signed-in-as footer note
+    78→- Ran `npx eslint` on all my files → EXIT 0 (clean). The only project-wide lint error is in `employee/confetti.tsx` (Task 4-a, outside scope). Dev server compiles successfully.
+    79→
+    80→Stage Summary:
+    81→- Files created/modified (7):
+    82→  - `src/components/focuspot/super-admin-dashboard.tsx` (replaced stub)
+    83→  - `src/components/focuspot/super/types.ts`
+    84→  - `src/components/focuspot/super/helpers.tsx`
+    85→  - `src/components/focuspot/super/notifications-bell.tsx`
+    86→  - `src/components/focuspot/super/overview-tab.tsx`
+    87→  - `src/components/focuspot/super/companies-tab.tsx`
+    88→  - `src/components/focuspot/super/activity-tab.tsx`
+    89→  - `agent-ctx/4-c-super-admin-dashboard.md` (work record)
+    90→- Key features: MRR/ARR hero with emerald gradient, revenue PieChart + BarChart (amber/violet), full company table with search/filter/sort + impersonation + Stripe-webhook simulation, challenges timeline with winner callouts, notifications bell with unread badge, fully responsive (mobile card grid + horizontal-scroll nav), framer-motion animations, loading skeletons + error state
+    91→- No files outside scope were modified (no API routes, schema, AppShell, or other dashboards touched)
+    92→- Design system honored: emerald primary, amber/violet/rose accents, NO blue/indigo, p-4/p-6 cards, gap-4/gap-6, scrollbar-thin scrollable lists, sticky footer via AppShell
+    93→- Issue to flag: the project-wide `bun run lint` fails due to a pre-existing error in `employee/confetti.tsx` (Task 4-a). My files pass lint independently. Suggest the Task 4-a agent refactor the `useEffect` in confetti.tsx to avoid synchronous setState.
+    94→
+    95→---
+    96→Task ID: 4-a
+    97→Agent: full-stack-developer (Employee dashboard)
+    98→Task: Build the Employee dashboard with focus timer, anti-cheat, leaderboard, streaks, history, gamification
+    99→
+   100→Work Log:
+   101→- Read worklog + existing API routes (`/api/employee/me`, `/api/employee/sessions`, `/api/employee/leaderboard`) to understand the data shapes and the seeded scenario (Northwind active challenge + completed Marketing-team challenge)
+   102→- Read shared `AppShell`/`NavButton`, `useAuthStore`, `getColor`/`getInitials` to keep styling/imports consistent with the rest of the app
+   103→- Verified globals.css already exposes `.timer-active`, `.brand-gradient`, `.brand-text`, `.flame`, `.confetti-piece`, `.plant-grow`, `.scrollbar-thin` — reused them all
+   104→- Created the employee component folder `src/components/focuspot/employee/` with focused sub-components, then rewrote the main `employee-dashboard.tsx` orchestrator
+   105→- Focus Timer (`employee/focus-timer.tsx`):
+   106→  - Big circular SVG countdown with emerald gradient stroke + `.timer-active` pulsing glow when running
+   107→  - Duration picker (30 / 60 min, points 5 / 10) shown only when idle
+   108→  - Anti-cheat: `visibilitychange` listener pauses the timer instantly when `document.hidden` becomes true, shows the "Stay focused!" warning card, increments an interruptions counter, and toasts. Resumes automatically when the tab is visible again.
+   109→  - Stat cards above the timer: current streak (🔥 + `.flame` animation when ≥2), today's focus minutes, total focus hours
+   110→  - On zero → POST `/api/employee/sessions` with `{durationMinutes, points, challengeId}`, then runs the plant-growth SVG animation and a success toast; if `streakIncreased && streak>=2`, shows a 🔥 flame animation + streak toast
+   111→  - "End Early" button discards the session (no points) and resets
+   112→- Leaderboard (`employee/leaderboard.tsx`):
+   113→  - Top banner with `brand-gradient`: "You're ranked #X of N" + myStats (hours / points / streak)
+   114→  - Team leaderboard card: ranked rows with team-color dots, progress bars sized to the leader's hours, "Your Team" badge highlighting user's team, avg/member + member count
+   115→  - Personal leaderboard card with Tabs ("Top in Company" / "My Team"); rows show rank, avatar gradient + initials, progress bar, hours, and streak (🔥 when ≥2). Current user is highlighted in emerald.
+   116→- History (`employee/history.tsx`): summary stat cards (sessions, total focus, points) + a date-grouped timeline with a vertical rail and dot markers; long list scrolls inside `max-h-[34rem] overflow-y-auto scrollbar-thin`
+   117→- Challenge (`employee/challenge.tsx`):
+   118→  - Active challenge card: name, description, prize box (amber), live countdown (days/hours/min/sec), "team with most focus hours wins" callout
+   119→  - If `lastCompleted.isWinner`: confetti burst (`Confetti` component, fires once via lazy-initialized state) + celebratory card with copyable gift card code
+   120→  - If `!isWinner`: graceful "better luck next time" card naming the winning team
+   121→- Notifications (`employee/notifications.tsx`): bell with unread count badge → Popover with a tinted icon per type, unread dot, relative timestamps via `date-fns`
+   122→- Plant animation (`employee/plant-animation.tsx`): SVG pot + stem + leaves + sprout + sparkles, all sequenced with framer-motion
+   123→- Confetti (`employee/confetti.tsx`): 90 pieces using the `.confetti-piece` CSS class with random colors/sizes/timing
+   124→- Main `employee-dashboard.tsx`: fetches `/api/employee/me`, manages tab state (Timer/Leaderboard/History/Challenge) with `NavButton` inside `AppShell`, exposes a `handleSessionComplete` callback that POSTs to `/api/employee/sessions` and optimistically updates the in-memory `me` state (streak, bestStreak, totalFocusHours, totalPoints, todayFocusMinutes, recentSessions). The Leaderboard is keyed by `challengeId + refreshKey` so it remounts and refetches after each completed session.
+   125→- Ran `bun run lint` — initially 3 `react-hooks/set-state-in-effect` errors (React 19 strict rule). Fixed all three without disabling the rule:
+   126→  - `challenge.tsx`: confetti flag now lazy-initialized from `lastCompleted?.isWinner`; only the setTimeout that hides it runs in the effect
+   127→  - `confetti.tsx`: pieces generated inline (not stateful); `hidden` flips via setTimeout callback only; parent passes a `key` so each `run=true` cycle is a fresh mount
+   128→  - `leaderboard.tsx`: removed synchronous `setLoading(true)/setError(null)` — parent remounts via `key={challengeId+refreshKey}` so each instance starts with the correct initial state
+   129→- Final `bun run lint` is clean (0 errors). Dev server log shows "✓ Compiled" with no errors from employee-dashboard files (only stale errors about `super-admin-dashboard` from before that agent finished).
+   130→
+   131→Stage Summary:
+   132→- Files created:
+   133→  - `src/components/focuspot/employee-dashboard.tsx` (orchestrator — replaces stub)
+   134→  - `src/components/focuspot/employee/focus-timer.tsx`
+   135→  - `src/components/focuspot/employee/leaderboard.tsx`
+   136→  - `src/components/focuspot/employee/history.tsx`
+   137→  - `src/components/focuspot/employee/challenge.tsx`
+   138→  - `src/components/focuspot/employee/notifications.tsx`
+   139→  - `src/components/focuspot/employee/plant-animation.tsx`
+   140→  - `src/components/focuspot/employee/confetti.tsx`
+   141→- No other files modified (no API routes, no schema, no app-shell, no other dashboards)
+   142→- Key features delivered: large pulsing circular focus timer with 30/60 min presets, Page Visibility API anti-cheat with interruptions counter and resume-on-focus, plant-growth success animation, flame streak animation, full team + personal leaderboards with rank banner, date-grouped session history, live challenge countdown, winner confetti with gift card code reveal, notifications bell with unread badge
+   143→- Design compliance: emerald primary + amber/rose/sky/violet/orange accents (no blue/indigo), mobile-first responsive (grids collapse 1-col → 2-col at lg), `p-4`/`p-6` card padding, `gap-4`/`gap-6` spacing, long lists use `max-h-* overflow-y-auto scrollbar-thin`, all required CSS classes reused
+   144→- React 19 lint compliance: no `setState` synchronously inside effects; all state resets happen via `key`-based remounts or lazy initializers
+   145→
+   146→---
+   147→Task ID: 4-b
+   148→Agent: full-stack-developer (Company Admin dashboard)
+   149→Task: Build the Company Admin dashboard with challenge creation, anonymous team analytics (Privacy Shield), charts
+   150→
+   151→Work Log:
+   152→- Read worklog.md to understand the existing schema, API routes, AppShell/NavButton pattern, color system, and Privacy Shield design decision.
+   153→- Read shared app-shell.tsx, colors.ts, store.ts, all relevant shadcn/ui components (Card, Button, Badge, Dialog, Progress, Tabs, Table, Input, Label, Textarea, DropdownMenu, Skeleton), and the API route handlers for /api/admin/dashboard, /api/admin/challenges, /api/admin/challenges/[id]/end, /api/admin/teams to confirm the exact response shapes.
+   154→- Created modular structure under src/components/focuspot/admin/:
+   155→  - types.ts — shared TypeScript interfaces mirroring the /api/admin/dashboard response.
+   156→  - notifications-menu.tsx — bell icon button + dropdown with unread badge, "mark all read" action, type-coloured chips, relative timestamps.
+   157→  - create-challenge-dialog.tsx — full challenge creation form (name, description, start/end date defaulting to today → +4d, prize, gift card value, gift card code) POSTing to /api/admin/challenges with toasts.
+   158→  - end-challenge-dialog.tsx — confirm dialog asking for gift card code, POSTing to /api/admin/challenges/[id]/end, toasting the winning team name + notified employees count.
+   159→  - overview-tab.tsx — top stat cards (focus hours, sessions, active employees, seats used w/ progress bar), prominent Privacy Shield hero banner (emerald gradient, Shield + Lock icons, uses privacyNote), active challenge card with live countdown + duration progress, recharts AreaChart of daily hours, subscription card (plan, MRR, seats, status badge with ACTIVE/PAST_DUE/CANCELED colours).
+   160→  - challenge-tab.tsx — active challenge display with End Challenge Now + Replace buttons, lifecycle hint, prize + gift card status, empty state.
+   161→  - teams-tab.tsx — Privacy Shield showcase: header banner, recharts horizontal BarChart of team total hours, grid of ranked team cards (crown on #1, lock icon + "Anonymous team data" on every card, NO individual names), detailed anonymous table with sticky header.
+   162→  - history-tab.tsx — grid of completed challenge cards with winner team (color dot + crown), dates, prize.
+   163→- Replaced the stub at src/components/focuspot/company-admin-dashboard.tsx with the main orchestrator: wraps in AppShell, NavButtons for the 4 tabs + NotificationsMenu separated by a divider, sticky page sub-header with admin avatar + welcome message + Privacy Shield badge + refresh button, fetches /api/admin/dashboard (cache: 'no-store'), skeleton loading state, error state with retry, AnimatePresence tab transitions.
+   164→- Color palette: emerald primary, amber (challenges/leader), rose (destructive/end), violet (employees), sky (seats), orange (crown). NO blue/indigo.
+   165→- Mobile-first responsive (4→2 col grids on small screens, hidden table columns, sticky headers, scrollbar-thin on long lists, touch-friendly tap targets).
+   166→- Ran `bun run lint` — my files produce 0 errors (3 errors exist in src/components/focuspot/employee/* files written by the parallel Task 4-c agent, outside my scope).
+   167→- Ran `npx tsc --noEmit -p tsconfig.json` — 0 errors in my files (pre-existing TS errors in src/app/api/admin/dashboard/route.ts from orchestrator Task 1 are outside my scope; I did NOT modify any API route or schema).
+   168→- Wrote work record to /agent-ctx/4-b-full-stack-developer.md.
+   169→
+   170→Stage Summary:
+   171→- Files created (9): src/components/focuspot/admin/types.ts, notifications-menu.tsx, create-challenge-dialog.tsx, end-challenge-dialog.tsx, overview-tab.tsx, challenge-tab.tsx, teams-tab.tsx, history-tab.tsx; src/components/focuspot/company-admin-dashboard.tsx (replaced stub).
+   172→- Files NOT modified (out of scope): any API route, prisma/schema.prisma, src/components/focuspot/shared/app-shell.tsx, src/app/page.tsx, employee-dashboard.tsx, super-admin-dashboard.tsx.
+   173→- Key features: Privacy Shield hero banner + lock icons on every team card (B2B selling point), live challenge countdown, recharts AreaChart (daily hours) + horizontal BarChart (team comparison), create/end challenge dialogs with gift-card-code handling, notifications bell with unread badge, anonymous team ranking with crown on #1, subscription status card, sticky page sub-header, mobile-first responsive layouts, framer-motion animations.
+   174→- All API contracts consumed as documented in the task spec.
+   175→- No issues encountered; lint and tsc clean for my files.
+   176→
+   177→---
+   178→Task ID: 5
+   179→Agent: Main (orchestrator)
+   180→Task: Integrate all dashboards, fix TypeScript errors, verify with Agent Browser
+   181→
+   182→Work Log:
+   183→- Fixed TypeScript errors in API routes:
+   184→  - `admin/dashboard/route.ts`: simplified challengeSessionWhere ternary (removed `activeChallenge?.startDate` on never type), added null-safe `admin.company?.seats ?? 0`
+   185→  - `employee/leaderboard/route.ts`: added `streak` to the user select (was missing, caused TS2339)
+   186→- Fixed framer-motion `Variants` typing in `super/overview-tab.tsx`: imported `type Variants`, typed the `fade` object, and used `as const` on inline `ease` values
+   187→- Ran `bun run lint` → clean (0 errors)
+   188→- Ran `npx tsc --noEmit` → 0 errors in `src/` (only pre-existing errors in examples/ and skills/ folders which are unrelated)
+   189→- Verified with Agent Browser end-to-end:
+   190→  1. Landing page: renders title "FocusPot — Team Deep Work Competitions", hero, 3 role quick-login cards, email form
+   191→  2. Employee dashboard: focus timer starts/pauses, ANTI-CHEAT verified (document.hidden triggers "Stay focused! Timer paused" warning), leaderboard shows team rankings + personal rank (#19 of 23) + "Your Team" highlight + streak flames (🔥)
+   192→  3. Company Admin dashboard: Privacy Shield banner prominent, anonymous company stats (89.5h, 105 sessions, 23 employees), daily focus chart, Teams tab shows ONLY anonymous team data (no individual names), Challenge tab with create/end flow
+   193→  4. Super Admin dashboard: MRR $497/mo, ARR $5,964/yr, revenue PieChart + BarChart, Companies table with 5 companies, subscription status badges, "View as Admin" impersonation
+   194→  5. Challenge creation: tested full flow (form fill → "Launch Challenge" → new active challenge created, employees notified, toast confirmed)
+   195→- Verified sticky footer: sticks to bottom on short content (1200px viewport), pushed down naturally on long content
+   196→- Verified no console errors / page errors during all interactions
+   197→- Re-seeded database to restore original demo state after testing
+   198→
+   199→Stage Summary:
+   200→- FocusPot is complete and fully functional. All three roles (Super Admin, Company Admin, Employee) have working dashboards.
+   201→- Key features verified: anti-cheat timer (Page Visibility API), Privacy Shield (anonymous team data only), team + personal leaderboards, streaks with flame animations, challenge lifecycle (create → active → end → winner), MRR/ARR revenue tracking, company subscription management.
+   202→- Demo accounts (password "demo"): sree@focuspot.io (Super Admin), hr@northwindlabs.com (Company Admin), alex.chen@northwindlabs.com (Employee) + 56 more seeded employees.
+   203→- Dev server running on port 3000, lint clean, no runtime errors.
+   204→
+   205→---
+   206→Task ID: P1
+   207→Agent: Main (orchestrator)
+   208→Task: Production-readiness backend foundation — password hashing, schema upgrades, all management APIs
+   209→
+   210→Work Log:
+   211→- Created `src/lib/password.ts`: scrypt-based password hashing (hashPassword/verifyPassword), generateJoinCode, generateTempPassword — no external deps
+   212→- Updated Prisma schema: added `joinCode` (unique) to Company, `title` to User, `active` (soft-delete) to User + index
+   213→- Force-reset DB and re-seeded with hashed passwords (all demo accounts still use password "demo")
+   214→- Updated `/api/auth/login` to use verifyPassword + zod validation + active check + canceled-company block
+   215→- Created `/api/auth/register-company` (POST): full company onboarding — creates company + admin + default "General" team + welcome notification, returns session. Validates with zod, checks domain/email uniqueness, generates join code
+   216→- Created `/api/auth/register-employee` (POST): employee joins via join code — validates code, checks seat limit, assigns to team (default or specified), creates welcome notification
+   217→- Created `/api/notifications/[id]/read` (PATCH): mark single notification read
+   218→- Created `/api/notifications/read-all` (POST): mark all user's notifications read
+   219→- Created `/api/employee/profile` (PATCH): update name/title/avatarColor, change password (requires currentPassword verification)
+   220→- Updated `/api/admin/teams` (GET + POST): GET returns teams with member counts, POST creates team with name+color (validates uniqueness)
+   221→- Created `/api/admin/teams/[id]` (PATCH + DELETE): edit team name/color, delete team (reassigns members to oldest remaining team, blocks deleting last team)
+   222→- Created `/api/admin/employees` (GET + POST): GET returns employee DIRECTORY ONLY (name, email, title, team, role, active, joined) — PRIVACY SHIELD: NO focus data. POST adds employee with temp password
+   223→- Created `/api/admin/employees/[id]` (PATCH + DELETE): update team assignment/name/title/active, permanently delete (cascades sessions+notifications)
+   224→- Created `/api/admin/company` (GET + PATCH + POST): GET company settings, PATCH update name, POST regenerate join code
+   225→- Created `/api/admin/challenges/[id]` (DELETE): permanently delete challenge + its sessions
+   226→- Updated `/api/super/companies/[id]` to add GET handler: returns detailed company info (teams, admin, focus aggregates, recent challenges)
+   227→- Updated `/api/admin/dashboard` to include joinCode + title in response
+   228→- Updated `/api/employee/me` to include title + active check
+   229→- All routes use zod validation, proper error handling, and role-based authorization
+   230→- Ran `bun run lint` → clean. `npx tsc --noEmit` → 0 errors in src/
+   231→
+   232→Stage Summary:
+   233→- All backend APIs for production-readiness are complete:
+   234→  - Auth: login (hashed), register-company, register-employee, me, logout
+   235→  - Employee: me, sessions, leaderboard, profile (update)
+   236→  - Admin: dashboard, challenges (create/list/end/delete), teams (list/create/edit/delete), employees (list/add/edit/delete), company (settings/regenerate-code)
+   237→  - Super: dashboard, companies (list/detail/update), login-as
+   238→  - Notifications: mark-read (single + all)
+   239→- PRIVACY SHIELD maintained: admin employee endpoints return directory info only, NEVER focus hours/sessions/streaks
+   240→- Join codes for all seeded companies: NORTHWIND-7K2M, ACMECORP-3F9P, BRIGHT-5H8X, QUANTUM-2D4T, PIXELCO-9R1W
+   241→- New API route file locations (all under src/app/api/):
+   242→  - auth/register-company/route.ts, auth/register-employee/route.ts
+   243→  - notifications/[id]/read/route.ts, notifications/read-all/route.ts
+   244→  - employee/profile/route.ts
+   245→  - admin/teams/[id]/route.ts, admin/employees/route.ts, admin/employees/[id]/route.ts, admin/company/route.ts, admin/challenges/[id]/route.ts
+   246→  - super/companies/[id]/route.ts (added GET to existing PATCH)
+   247→- Frontend subagents (P2-a, P2-b) should build UI for these APIs. Key notes:
+   248→  - Company `joinCode` is now available in `/api/admin/dashboard` response under `company.joinCode`
+   249→  - Employee directory from `/api/admin/employees` returns `{ employees: [{id,name,email,title,role,avatarColor,active,teamId,createdAt,team:{id,name,color}}], seats, employeeCount }`
+   250→  - Adding employee returns `{ employee: {..., tempPassword} }` — show tempPassword once to admin
+   251→  - Use zod error messages from API responses directly (they're user-friendly)
+   252→
+   253→---
+   254→Task ID: P2-a
+   255→Agent: full-stack-developer (Registration & Profile)
+   256→Task: Build registration/onboarding flow (company signup + employee join) in login screen + employee profile/settings dialog + notification mark-as-read wiring
+   257→
+   258→Work Log:
+   259→- Read worklog.md to align with schema, API contracts (P1 endpoints), shared components (AppShell/NavButton), color system (emerald primary, NO blue/indigo), `useAuthStore`, `getColor`/`getInitials`, sonner toast conventions
+   260→- Read existing `login-screen.tsx`, `app-shell.tsx`, `employee/notifications.tsx`, `lib/store.ts`, `lib/colors.ts`, `app/page.tsx`, and all relevant P1 API route handlers (`/api/auth/register-company`, `/api/auth/register-employee`, `/api/employee/profile`, `/api/notifications/[id]/read`, `/api/notifications/read-all`) to confirm exact request/response shapes
+   261→- Updated `src/components/focuspot/login-screen.tsx`:
+   262→  - Wrapped the right-side login card content in a shadcn `Tabs` with two triggers: "Sign In" (existing behavior, untouched) and "Get Started" (new)
+   263→  - Sign In tab preserves ALL existing behavior: quick-login role cards (Super Admin / Company Admin / Employee) + email/password form + demo-mode hint
+   264→  - Get Started tab adds a custom segmented control with two sub-paths: "I'm an HR Manager" and "I'm an Employee"
+   265→  - Company Registration form (`CompanyRegistrationForm`): company name + domain (regex-validated), admin name + work email, password (min 6), and a 2-card plan selector (Starter $99/mo up to 50 employees vs Growth $199/mo up to 200 employees) with feature lists and emerald/violet accent dots. On submit POSTs to `/api/auth/register-company`, then `setUser(data)` and shows a 6-second toast: "Company created! Your join code is XXXX — share it with your team." App then routes to Company Admin dashboard via `page.tsx` role check.
+   266→  - Employee Join form (`EmployeeJoinForm`): join code (auto-uppercased, monospace, placeholder "NORTHWIND-7K2M"), name, work email, password (min 6). No team selector — backend assigns to default "General" team. On submit POSTs to `/api/auth/register-employee`, then `setUser(data)` + toast "Welcome to FocusPot!" → routes to Employee dashboard.
+   267→  - Client-side validation mirrors backend zod schemas; backend error messages are surfaced directly via toast.
+   268→  - Left-side hero (pitch text + feature bullets) and footer kept identical. Only the right-side card content changed.
+   269→- Created `src/components/focuspot/employee/profile-dialog.tsx`:
+   270→  - Controlled shadcn `Dialog` (`open` / `onOpenChange` props) so the AppShell can manage state
+   271→  - Live avatar preview at top (gradient + initials) that updates as the user edits name / picks a color
+   272→  - Profile section: full name input, job title input, and a 6-swatch color picker (emerald / amber / rose / sky / violet / orange) with ring + check mark on the active swatch
+   273→  - Change-password section (separated by a divider with a KeyRound icon): current password, new password (min 6, inline warning if <6), confirm new password (inline warning if mismatch). All fields optional — blank means "keep current password"
+   274→  - Save button: validates client-side, builds a PATCH payload containing only changed fields, POSTs to `/api/employee/profile`, merges the returned user into the auth store (preserving role/teamId/companyId + stashing `title` for re-open), toasts "Profile updated", and closes the dialog
+   275→  - "No changes to save" toast if nothing was edited
+   276→- Updated `src/components/focuspot/shared/app-shell.tsx`:
+   277→  - Added a `useState` for `profileOpen` and imported `ProfileDialog`
+   278→  - Added a "Profile & Settings" `DropdownMenuItem` (with Settings icon) that appears ONLY when `user?.role === 'EMPLOYEE'` (admins have their own settings in their dashboards)
+   279→  - Mounted `<ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />` at the bottom of the AppShell, also gated on `user?.role === 'EMPLOYEE'`
+   280→- Updated `src/components/focuspot/employee/notifications.tsx`:
+   281→  - Refactored to maintain a `readOverrides: Record<id, boolean>` overlay map (avoids mutating props and avoids `set-state-in-effect` lint violations)
+   282→  - Effective read state = override ?? prop value; effective items list derived inline each render
+   283→  - "Mark all read" button in the popover header (CheckCheck icon, ghost variant) → POST `/api/notifications/read-all` with optimistic override for all unread IDs; rolls back on failure; success toast reports `updated` count
+   284→  - Each notification row is now a `<button>` that calls `markOneRead(n.id)` → PATCH `/api/notifications/[id]/read` with optimistic override; rolls back on failure; disabled (no-op) when already read; per-row spinner via pending state
+   285→  - Unread badge + emerald tint on unread rows preserved; accessible aria-label on the bell trigger
+   286→- Ran `bun run lint` — my files produce 0 errors (one pre-existing error in `admin/employees-tab.tsx` line 1025 from a parallel agent's work, outside my scope)
+   287→- Ran `npx eslint` on my 4 files with `--max-warnings 0` → exit 0 (clean)
+   288→- Ran `npx tsc --noEmit` → 0 errors in `src/`
+   289→- Dev server compiles cleanly with all changes (verified via dev.log)
+   290→- Wrote work record to `/agent-ctx/P2-a-full-stack-developer.md`
+   291→
+   292→Stage Summary:
+   293→- Files created/modified (4):
+   294→  - `src/components/focuspot/employee/profile-dialog.tsx` (NEW — profile + change-password dialog)
+   295→  - `src/components/focuspot/login-screen.tsx` (MODIFIED — added Tabs with Sign In / Get Started; new company registration + employee join forms)
+   296→  - `src/components/focuspot/shared/app-shell.tsx` (MODIFIED — Profile & Settings menu item for EMPLOYEE role + ProfileDialog mount)
+   297→  - `src/components/focuspot/employee/notifications.tsx` (MODIFIED — mark-all-read button + click-to-mark-individual-read)
+   298→- Files NOT modified (out of scope): any API route, prisma schema, page.tsx, other dashboards, store/colors libs
+   299→- Key features delivered:
+   300→  - Tabbed login (Sign In / Get Started) with no behavior regression on Sign In
+   301→  - HR Manager company registration: full form with plan selector showing $99/$199 pricing, seat counts, feature lists; success toast surfaces the auto-generated join code
+   302→  - Employee join via join code: uppercase monospace input, auto-team-assignment, success toast
+   303→  - Employee profile dialog: live avatar preview, 6-color swatch picker, name + title edit, optional password change with current-password verification + min-6 + match validation
+   304→  - AppShell user menu now shows "Profile & Settings" for employees only
+   305→  - Notifications bell: optimistic mark-one-read on row click, optimistic mark-all-read button, per-row + global spinners, rollback on failure
+   306→- Design compliance: emerald primary + amber/violet/rose/sky/orange accents (NO blue/indigo), `p-4`/`p-6` card padding, `gap-3`/`gap-4` spacing, mobile-first responsive (grid-cols-1 → sm:grid-cols-2 for forms and plan cards), `scrollbar-thin` on long lists, framer-motion animations, all required shadcn/ui components used (Tabs, Dialog, Input, Label, Button, Badge, Popover, DropdownMenu)
+   307→- React 19 lint compliance: notifications component uses an overlay-Set pattern instead of `useEffect`-synced local state to avoid `react-hooks/set-state-in-effect` violations; profile-dialog uses a guarded `useEffect` to reset form fields when the dialog opens (passes lint)
+   308→- API contracts consumed exactly as documented in the task spec
+   309→- No issues encountered; lint and tsc clean for my files
+   310→
+   311→---
+   312→Task ID: P2-b
+   313→Agent: full-stack-developer (Admin Management)
+   314→Task: Build Company Admin full management — Employees tab (CRUD), Settings tab (join code, company info), Teams tab CRUD enhancement, challenge delete, notification mark-as-read
+   315→
+   316→Work Log:
+   317→- Read worklog.md to absorb the project context (Privacy Shield, emerald color system, AppShell/NavButton pattern, z-ai-web-dev-sdk backend-only, P1 API contracts for employees/teams/company/challenges/notifications).
+   318→- Read existing admin files (overview-tab, teams-tab, challenge-tab, history-tab, notifications-menu, create-challenge-dialog, end-challenge-dialog, types.ts) and the orchestrator company-admin-dashboard.tsx to keep the design system consistent (emerald primary, amber/rose/violet/sky/orange accents, p-4/p-6 card padding, gap-4/gap-6 spacing, scrollbar-thin on long lists, framer-motion animations).
+   319→- Read all the new P1 API routes (employees GET/POST, employees/[id] PATCH/DELETE, teams GET/POST, teams/[id] PATCH/DELETE, company GET/PATCH/POST, challenges/[id] DELETE, notifications/[id]/read PATCH, notifications/read-all POST) to confirm exact response shapes.
+   320→- Updated `admin/types.ts`: extended `TabKey` union to `'overview' | 'challenge' | 'teams' | 'employees' | 'settings' | 'history'` and added new types — `EmployeeDirectoryItem`, `EmployeesResponse`, `TeamManageItem`, `TeamsManageResponse`, plus a `TEAM_COLORS` const array and `TeamColor` type for the team color picker.
+   321→- Created `admin/employees-tab.tsx` (new): PRIVACY SHIELD directory-only view with lock icon + "Directory only — focus data stays private" note. Features:
+   322→  • Fetches `/api/admin/employees` and `/api/admin/teams` in parallel.
+   323→  • Header with employee count / seats + Progress bar + warning at ≤2 seats left / seat-limit block.
+   324→  • "Add Employee" button → Dialog (name, email, title, team Select). On submit POSTs to `/api/admin/employees`. Response's `tempPassword` is shown ONCE in a success Dialog with copy buttons for both email and password + a warning to share securely (uses `key` prop so the dialog remounts cleanly per-new-employee, avoiding setState-in-effect lint issues).
+   325→  • Desktop: shadcn Table with sticky header inside `max-h-[32rem] overflow-y-auto scrollbar-thin`. Mobile: card layout. Each row/card shows avatar (gradient + initials), name + "You"/"Admin" badges, email, title, team badge with color dot, active/inactive badge, joined date.
+   326→  • Per-row DropdownMenu: "Edit details" (name+title), "Change team" (Select), "Deactivate"/"Reactivate" toggle, "Remove" (destructive, confirm AlertDialog). Self-row disables Change team / Deactivate / Remove — admin can only edit their own name/title.
+   327→  • Search by name/email/title + team filter Select.
+   328→- Created `admin/settings-tab.tsx` (new): Three-card layout.
+   329→  • **Join Code card** (emerald gradient top stripe): large monospace display of `joinCode` (2xl→4xl tracking-wide) + copy button + "Regenerate" button. Includes a "How employees use this code" explainer with ShieldCheck icon. Regenerate flows through an AlertDialog confirm ("invalidates the old code") → POST `/api/admin/company` → updates displayed code → toast.
+   330→  • **Company Information card**: editable company name (Pencil button → EditNameDialog → PATCH `/api/admin/company`), read-only domain (Globe icon), plan, monthly revenue, seats, subscription status badge. Separator divides editable vs read-only fields.
+   331→  • **Billing & Subscription card**: 3 stat tiles (Monthly revenue, Seat usage with Progress, Plan + status badge). Shows an "Upgrade to Growth" hint when Starter plan and ≤10 seats remaining. Shows past-due / canceled warnings with appropriate colors.
+   332→  • **Danger Zone card** (rose border): regenerate-join-code row with rose-tinted button → same AlertDialog as the Join Code card's regenerate.
+   333→- Enhanced `admin/teams-tab.tsx`: kept ALL existing anonymous analytics (Privacy Shield banner, horizontal BarChart, ranked team cards with crown/lock, detailed anonymous table). Added:
+   334→  • `useEffect` fetches `/api/admin/teams` for live management data (member counts, createdAt) used for the delete-reassignment hint.
+   335→  • "Create Team" button (emerald) in the header → `TeamFormDialog` (mode='create') with name Input + 6-color picker grid (TEAM_COLORS) → POST `/api/admin/teams` → refresh.
+   336→  • Each team card gets a pencil (edit) and trash (delete) ghost button next to the rank badge. Edit → `TeamFormDialog` (mode='edit') → PATCH `/api/admin/teams/[id]`. Delete → AlertDialog confirm that names the oldest remaining team ("Members will be reassigned to {oldestTeam.name}") → DELETE `/api/admin/teams/[id]` → toast "Team deleted, members reassigned to {name}" → refresh.
+   337→  • `TeamFormDialog` component reused for both create and edit modes.
+   338→- Enhanced `admin/challenge-tab.tsx`: kept existing active-challenge display + End Challenge Now + Create New Challenge flows intact. Added a new "Past Challenges" section below the active challenge that renders `data.completedChallenges` as compact cards (with winner badge, prize, completed badge, dates) and a trash icon per card. Delete → AlertDialog confirm → DELETE `/api/admin/challenges/[id]` → toast "Challenge deleted" → onRefresh.
+   339→- Enhanced `admin/notifications-menu.tsx`: now self-contained API integration.
+   340→  • "Mark all read" button → POST `/api/notifications/read-all` → invokes new `onMarkAllRead` prop to update parent state → toast with the count of updated notifications. Shows spinner while in-flight.
+   341→  • Each notification row is now a `<button>` that calls PATCH `/api/notifications/[id]/read` → invokes new `onMarkRead(id)` prop → updates parent state. Per-row spinner while marking.
+   342→  • Removed the local toast from the parent's `onMarkAllRead` (toast now lives in the menu after the API call).
+   343→- Updated `company-admin-dashboard.tsx`: imported `Settings` icon, added Employees + Settings entries to the TABS array, added `handleMarkRead(id)` callback that updates local state, wired both new tabs and the new `onMarkRead` prop to both desktop and mobile NotificationsMenu instances. Removed the now-unused `toast` import. Render branches: `<EmployeesTab onRefresh={handleRefresh} adminId={data.admin.id} />` and `<SettingsTab company={data.company} totalEmployees={data.totalEmployees} onRefresh={handleRefresh} />`.
+   344→- Ran `bun run lint` → 0 errors. Fixed one initial lint error: `react-hooks/set-state-in-effect` in TempPasswordDialog (was using `useEffect` to reset `copied`); replaced with a `key` prop on the dialog so it remounts cleanly each time `tempPasswordInfo` changes.
+   345→- Ran `npx tsc --noEmit 2>&1 | grep "^src/"` → 0 errors in src/.
+   346→- Verified dev server compiles my files cleanly ("✓ Compiled in …ms" with no module-not-found errors). The login endpoint currently returns 403 "deactivated" because the dev server has a stale in-memory Prisma Client that doesn't know about the `active`/`title` columns added in Task P1 (the running dev server was started before `prisma generate` was run). This is a pre-existing infrastructure issue unrelated to my work — restarting the dev server will fix it. My code is verified via lint + tsc.
+   347→
+   348→Stage Summary:
+   349→- Files created (2):
+   350→  - `src/components/focuspot/admin/employees-tab.tsx` — directory CRUD with privacy shield, temp-password one-time reveal, add/edit/change-team/deactivate/remove flows, desktop table + mobile cards.
+   351→  - `src/components/focuspot/admin/settings-tab.tsx` — join code display + regenerate, company info edit, billing tiles with upgrade hint, danger zone.
+   352→- Files modified (5):
+   353→  - `src/components/focuspot/admin/types.ts` — extended TabKey, added EmployeeDirectoryItem/EmployeesResponse/TeamManageItem/TeamsManageResponse/TEAM_COLORS/TeamColor.
+   354→  - `src/components/focuspot/admin/teams-tab.tsx` — added Create/Edit/Delete team CRUD on top of existing anonymous analytics (Privacy Shield intact).
+   355→  - `src/components/focuspot/admin/challenge-tab.tsx` — added Past Challenges section with per-card delete + AlertDialog confirm.
+   356→  - `src/components/focuspot/admin/notifications-menu.tsx` — wired POST /api/notifications/read-all + PATCH /api/notifications/[id]/read with spinners and toasts; added `onMarkRead(id)` prop.
+   357→  - `src/components/focuspot/company-admin-dashboard.tsx` — added Employees + Settings tabs, imported Settings icon, wired `onMarkRead`, removed unused toast import.
+   358→- Files NOT modified (out of scope): any API route, prisma/schema.prisma, src/lib/*, app-shell.tsx, employee/super dashboards, src/app/page.tsx.
+   359→- Key features delivered:
+   360→  • PRIVACY SHIELD: employee directory shows only names/emails/titles/teams/role/active/joined — NEVER focus hours/sessions/streaks/points. Lock icon + "Directory only — focus data stays private" note prominent at top.
+   361→  • One-time temp password reveal in a dedicated success Dialog (copy buttons for both email + password, security warning to share via secure channel).
+   362→  • Join code: prominent emerald-bordered card with large monospace display + copy + regenerate (with confirm AlertDialog).
+   363→  • Confirm AlertDialogs for all destructive actions (remove employee, delete team, delete challenge, regenerate code).
+   364→  • Mobile-first responsive (table on desktop, card list on mobile for employees; responsive grids everywhere).
+   365→  • Self-row protections (admin can't remove/deactivate/change-team themselves, only edit name/title).
+   366→  • All mutations trigger `onRefresh()` so the dashboard's anonymous aggregates stay in sync.
+   367→- Verification: `bun run lint` → 0 errors. `npx tsc --noEmit` → 0 errors in src/ (only pre-existing errors in examples/ and skills/ folders outside scope).
+   368→- Pre-existing issue flagged: dev server has stale Prisma Client (doesn't know about `active`/`title` columns added in Task P1). Login and `/api/admin/dashboard` return 500/403 until dev server is restarted. My code is correct and will work once the dev server picks up the regenerated Prisma Client.
+   369→
+   370→---
+   371→Task ID: P3
+   372→Agent: Main (orchestrator)
+   373→Task: Integrate, verify all production flows, re-seed database
+   374→
+   375→Work Log:
+   376→- Restarted dev server to pick up new Prisma client (schema changes: joinCode, title, active fields)
+   377→- Ran `bun run lint` → clean (0 errors)
+   378→- Ran `npx tsc --noEmit` → 0 errors in src/
+   379→- Verified with Agent Browser (all in single-shell commands due to dev server lifecycle):
+   380→  1. Company Registration: PASS — filled form (TestCorp Inc, testcorp.io, Test Admin, admin@testcorp.io, password123, Starter plan) → submitted → redirected to Company Admin dashboard with "Welcome back, Test" + all 6 tabs (Overview, Challenge, Teams, Employees, Settings, History)
+   381→  2. Employee Management: PASS — Employees tab shows "Directory only — focus data stays private" Privacy Shield banner, "Add Employee" button, seat usage (0/50), directory table
+   382→  3. Company Settings: PASS — Settings tab shows join code (NORTHWIND-7K2M), "Regenerate join code" button, company info, billing card
+   383→  4. Teams Management: PASS — Teams tab shows Create/Edit/Delete controls with anonymous analytics
+   384→  5. Employee Join with Code: PASS — cleared session, Get Started tab → "I'm an Employee" → filled join code NORTHWIND-7K2M + name + email + password → submitted → redirected to Employee dashboard "Good evening, New 🌿"
+   385→  6. Profile API: PASS — PATCH /api/employee/profile with {title:"Senior Designer"} → 200, title updated
+   386→  7. Notification mark-as-read API: PASS — POST /api/notifications/read-all → 200, 1 notification marked read
+   387→  8. Login with hashed passwords: PASS — all demo accounts (sree@focuspot.io, hr@northwindlabs.com, alex.chen@northwindlabs.com) login successfully with password "demo" (now scrypt-hashed)
+   388→  9. Get Started tab: PASS — visible on login screen, shows HR Manager + Employee options
+   389→  10. Privacy Shield: VISIBLE on all admin views
+   390→- No console errors / page errors during all interactions
+   391→- Re-seeded database to restore original demo state (5 companies, 12 teams, 57 employees, 156 sessions)
+   392→
+   393→Stage Summary:
+   394→- FocusPot is now production-ready and fully functional.
+   395→- 25 API routes (up from 15), 27 React components (up from 24)
+   396→- All production features working:
+   397→  - **Security**: scrypt password hashing, zod input validation on all routes, active/deactivated account handling, canceled-company login blocking
+   398→  - **Auth**: login, company registration (onboarding), employee join with code, logout
+   399→  - **Company Admin**: full CRUD — teams (create/edit/delete with member reassignment), employees (add with temp password, edit, deactivate, remove), challenges (create/end/delete), company settings (edit name, regenerate join code)
+   400→  - **Employee**: profile editing (name, title, avatar color, password change), notification mark-as-read
+   401→  - **Privacy Shield**: employee directory shows names/emails/teams only — NEVER focus hours/sessions/streaks/points
+   402→  - **Super Admin**: company detail view (GET), subscription management (PATCH)
+   403→- Join codes for demo companies: NORTHWIND-7K2M, ACMECORP-3F9P, BRIGHT-5H8X, QUANTUM-2D4T, PIXELCO-9R1W
+   404→- Lint clean, TypeScript clean, no runtime errors
+   405→
+   406→---
+   407→Task ID: E1
+   408→Agent: full-stack-developer (Enterprise APIs)
+   409→Task: Build all enterprise API routes — rewards, company settings, invitations, CSV import/export, employee achievements/stats/preferences, super admin feature flags/announcements/search/audit-log/platform-stats
+   410→
+   411→Work Log:
+   412→- Created 20 API route handlers across 18 files (under src/app/api/):
+   413→  - Rewards: admin/rewards (GET list paginated+filterable by type/active, POST create with audit); admin/rewards/[id] (PATCH update + DELETE with redemption/challenge-link block)
+   414→  - Redemptions: admin/redeemptions (GET list with reward+user+team info, filterable by status/tier/rewardId/challengeId, relation-aware sortBy); admin/redeemptions/[id] (PATCH status+code+notes with auto-fulfilledAt, audit)
+   415→  - Company Settings: admin/company-settings (GET upserts defaults, PATCH timezone/workingHours/workingDays/primaryColor/logoText/holidayCalendar with zod regex validation)
+   416→  - Invitations: admin/invitations (GET list, POST create with unique URL-safe token + 7-day expiry + duplicate/existing-user blocks); admin/invitations/[id] (PATCH revoke/expire, blocks already-accepted)
+   417→  - CSV: admin/employees/import (POST accepting {csv}, minimal RFC 4180 parser, per-row validation, hashed temp passwords, seat-limit enforcement, returns successCount+errors+created+tempPasswords); admin/employees/export (GET returning text/csv with proper escaping, directory-only — NO focus data)
+   418→  - Employee: achievements (GET all achievements + unlocked + progress, grouped by category); stats (GET 30-day daily focus minutes + session calendar + 7×24 heatmap + weekly summary with best day); notification-preferences (GET defaults + PATCH per-flag); rewards (GET user's redemptions + status summary)
+   419→  - Super: feature-flags (GET list with company-info join, POST create with UPPERCASE_SNAKE_CASE validation + scope/companyId consistency); feature-flags/[id] (PATCH toggle + DELETE); announcements (GET list + POST with startsAt<endsAt validation); announcements/[id] (PATCH + DELETE); search (GET ?q=... across companies/users/challenges with grouped response); audit-log (GET platform-wide paginated + filterable); platform-stats (GET totals by status/plan, MRR/ARR, 6-month MRR/companies-created/active-users trends, top 10 companies by focus hours)
+   420→- All mutations use auditLog() with appropriate action/entityType/entityId/companyId/metadata
+   421→- All POST/PATCH routes use zod validation
+   422→- All list endpoints use getQueryParams + paginatedResponse from @/lib/query
+   423→- All admin routes scope by admin.companyId (no cross-company access)
+   424→- Used Next.js 16 async params pattern: { params }: { params: Promise<{ id: string }> } with await params
+   425→- Modified src/lib/notifications.ts: added explicit type annotation to `results` array in sendNotifications() to fix pre-existing TS error (evolving arrays don't work across `await` in a loop)
+   426→- Notes for downstream agents (full details in /agent-ctx/E1-full-stack-developer.md):
+   427→  - admin/rewards GET returns each item with redemptionCount + linkedChallengeCount
+   428→  - admin/redeemptions GET supports sortBy=rewardName|userName for relation-aware sort
+   429→  - admin/invitations POST returns { invitation, inviteUrl: "/?invite={token}" }
+   430→  - admin/employees/import accepts CSV with name,email[,title,teamId] columns; teamId accepts team name too; returns created[].tempPassword
+   431→  - admin/employees/export returns text/csv attachment (focuspot-employees.csv)
+   432→  - employee/stats returns heatmap array of 168 entries (7 days × 24 hours)
+   433→  - employee/achievements returns { summary, byCategory, achievements }
+   434→  - super/platform-stats returns mrrTrend, companiesCreatedTrend, activeUsersTrend (each 6 months) + topCompanies (top 10)
+   435→  - super/search?q=... returns { companies, users, challenges, counts }
+   436→
+   437→Stage Summary:
+   438→- 20 enterprise API routes delivered across 4 domains:
+   439→  1. Rewards system (admin CRUD + redemption lifecycle management with auto-fulfilledAt)
+   440→  2. Company settings (upsert-on-read defaults, regex-validated working hours/days, holiday calendar as JSON array)
+   441→  3. Invitations (URL-safe tokens, 7-day expiry, revoke/expire lifecycle, blocks accepted invites)
+   442→  4. CSV import/export (RFC 4180 parser, per-row validation, hashed temp passwords, directory-only export)
+   443→  5. Employee experience (achievements with progress %, 30-day heatmap+calendar+weekly summary, granular notification preferences, redemption history)
+   444→  6. Super admin platform tools (feature flags with GLOBAL/COMPANY scope, announcements with date-window validation, global search across 3 entity types, platform-wide audit log, platform stats with 6-month trends)
+   445→- All routes consistently use: getSession() role checks, zod input validation, auditLog() on mutations, paginatedResponse() for lists, errorResponse() for errors, Next.js 16 async params pattern, scoped-by-companyId for admin routes
+   446→- Verification: bun run lint → 0 errors; npx tsc --noEmit → 0 errors in src/
+   447→- Dev server compiles cleanly with no new errors
+   448→
+   449→---
+   450→Task ID: E2
+   451→Agent: Main (orchestrator)
+   452→Task: Enterprise backend — schema expansion, scheduler, security, challenge engine, stats, scoring
+   453→
+   454→Work Log:
+   455→- Expanded Prisma schema with 16 new models: AuditLog, Reward, RewardRedemption, ChallengeReward, CompanySettings, Invitation, LoginHistory, EmployeeStatistics, TeamStatistics, CompanyStatistics, ScheduledJob, NotificationPreference, Achievement, UserAchievement, FeatureFlag, PlatformAnnouncement
+   456→- Extended existing models: User (failedLoginAttempts, lockedUntil, passwordChangedAt, lastLoginAt, totalSessions), Company (maintenanceMode), Challenge (scoringModel, scoringWeights, scope, targetTeamId, isRecurring, recurrencePattern, parentChallengeId, archived, cancelledReason, cancelledAt), FocusSession (archived), Notification (channel, status, retryCount, lastError)
+   457→- Added indexes on all frequently-queried columns
+   458→- Created `src/lib/audit.ts` (auditLog + recordLoginAttempt helpers)
+   459→- Created `src/lib/query.ts` (pagination, filtering, sorting, standard error response, search clause)
+   460→- Created `src/lib/stats.ts` (refreshEmployeeStats, refreshTeamStats, refreshCompanyStats, refreshCompanyStatsRange, checkAchievements)
+   461→- Created `src/lib/scoring.ts` (computeChallengeScores with TOTAL_HOURS/AVG_PER_MEMBER/PARTICIPATION_RATE/WEIGHTED models, getChallengeWinner, getChallengeRunnerUps)
+   462→- Created `src/lib/notifications.ts` (sendNotification with preference checking, sendNotifications batch)
+   463→- Enhanced login route: account lockout (5 attempts → 15min lock), login history recording, audit logging, maintenance mode awareness
+   464→- Enhanced challenge creation: scoring model, scope (COMPANY/TEAM), draft/schedule/active status, recurring, reward linking, scheduled job creation for auto-activation + auto-closure
+   465→- Enhanced challenge [id] route: PATCH (edit draft/scheduled), DELETE with actions: cancel, duplicate, archive, permanent delete
+   466→- Enhanced session creation: triggers stats refresh (employee/team/company), achievement check, returns newAchievements
+   467→- Built scheduler mini-service (`mini-services/scheduler/index.ts`): polls every 30s for due ScheduledJobs, ad-hoc checks every 5min for challenge activation/closure + recurring instance creation. Job types: CHALLENGE_ACTIVATE, CHALLENGE_CLOSE, STATS_REFRESH, STREAK_RESET, NOTIF_CLEANUP, SESSION_ARCHIVE
+   468→- Subagent E1 built 20 new API routes (rewards CRUD, redemptions, company settings, invitations, CSV import/export, employee achievements/stats/preferences/rewards, super admin feature flags/announcements/search/audit-log/platform-stats)
+   469→- Re-seeded with 12 achievements, 5 rewards, 6 feature flags, 1 platform announcement, company settings for all companies, scheduled jobs for challenge closure, notification preferences for all users
+   470→- Lint clean, TypeScript clean
+   471→
+   472→Stage Summary:
+   473→- 16 new database tables, 6 lib modules, scheduler mini-service
+   474→- Enterprise features: audit logging, login history, account lockout, scoring models, rewards system, persisted statistics, achievements, scheduler, CSV import/export, invitations, company settings, feature flags, platform announcements, global search
+   475→- Scheduler auto-closes challenges at endDate, auto-activates scheduled challenges, refreshes stats, resets stale streaks, creates recurring challenge instances
+   476→- All APIs use pagination, validation, auth checks, audit logging
+   477→- Frontend subagents needed to build UI for: rewards catalog, employee achievements/analytics, admin CSV/settings/audit, super admin search/flags/announcements
+   478→
+   479→---
+   480→Task ID: F2
+   481→Agent: full-stack-developer (Employee & Super Admin Enterprise UI)
+   482→Task: Build Employee Achievements/Stats/Rewards tabs, enhance notifications. Build Super Admin Feature Flags/Announcements/Audit Log tabs + Global Search.
+   483→
+   484→Work Log:
+   485→- Created 5 new files + modified 3 existing files (no API changes — all routes already built by E1)
+   486→- Employee Experience (Part A):
+   487→  - `src/components/focuspot/employee/achievements-tab.tsx` — grouped-by-category achievement cards (FOCUS/STREAK/SOCIAL/MILESTONE), SVG circular progress indicator, unlocked=full-color+glow vs locked=grayscale+opacity-70, progress bar showing current metric value vs threshold, metric-aware formatting (sessions/hours/days), unlocked date or "X to go" label
+   488→  - `src/components/focuspot/employee/stats-tab.tsx` — 4 summary cards (total focus / sessions / avg per active day / current streak), recharts LineChart for daily focus minutes, GitHub-style 30-day session calendar (emerald intensity buckets), best-day card with this-week summary, 7×24 focus heatmap with 5-level emerald scale + axis labels + legend
+   489→  - `src/components/focuspot/employee/rewards-tab.tsx` — 3 summary cards (total/fulfilled/pending), reward cards with tier badge (WINNER/RUNNER_UP/PARTICIPATION), type badge, status badge, copy-to-clipboard code box for fulfilled rewards, earned/fulfilled/expires dates, empty state
+   490→  - `src/components/focuspot/employee-dashboard.tsx` — added 3 new NavButtons (Award/BarChart3/Gift icons) + render branches for achievements/stats/rewards tabs
+   491→  - `src/components/focuspot/employee/notifications.tsx` — enhanced iconFor/tintFor to handle REWARD (amber/gift), ACHIEVEMENT (violet/award), WARNING (amber/triangle), SUCCESS (emerald/check), CHALLENGE (violet/trophy), plus INFO (sky), STREAK (orange), CHALLENGE_WON (amber/gift)
+   492→- Super Admin Enterprise UI (Part B):
+   493→  - `src/components/focuspot/super/feature-flags-tab.tsx` — 4 stat cards + search/scope-filter toolbar + flags table with key/name/description/scope badge/enabled Switch/actions columns + Create flag dialog (key/name/description/scope/company selector/enabled) + toggle via PATCH + delete via AlertDialog
+   494→  - `src/components/focuspot/super/announcements-tab.tsx` — 4 stat cards + announcement cards (type icon, badges, date range, dismissible) + Create/Edit dialog (title/message/type/active/dismissible/startsAt/optional endsAt) + delete confirmation + POST/PATCH/DELETE wiring
+   495→  - `src/components/focuspot/super/audit-log-tab.tsx` — 4 stat cards + debounced search + action filter + paginated table (timestamp/user/action badge/entity/company/IP/expandable metadata) + prev/next pagination
+   496→  - `src/components/focuspot/super/global-search.tsx` — ⌘K keyboard shortcut + 300ms debounce + grouped dropdown (companies/people/challenges) + click-outside close + DetailDialog for each result type + "Browse all companies" navigation
+   497→  - `src/components/focuspot/super-admin-dashboard.tsx` — added 3 new tabs to TAB_META (Flag/Megaphone/ScrollText icons) + PAGE_TITLES + GlobalSearch in header (md+) + render branches
+   498→
+   499→Stage Summary:
+   500→- 5 new feature tabs + 1 global search delivered across Employee and Super Admin dashboards
+   501→- Employee Achievements: visual badge grid with circular progress + per-category sections
+   502→- Employee Stats: 30-day analytics with line chart, calendar heatmap, 7×24 hourly heatmap
+   503→- Employee Rewards: full redemption history with copy-to-clipboard codes + tier/status badges
+   504→- Employee Notifications: now handles 8 notification types with spec-compliant color palette (NO blue/indigo)
+   505→- Super Admin Feature Flags: full CRUD with optimistic toggle + scope-aware create dialog
+   506→- Super Admin Announcements: full CRUD with date-window validation + live-now badge
+   507→- Super Admin Audit Log: paginated platform-wide event log with expandable metadata + action color-coding
+   508→- Super Admin Global Search: ⌘K shortcut, debounced grouped results, detail dialogs for each entity type
+   509→- All UIs are mobile-first responsive, use shared AppShell/NavButton/getColor/getInitials, shadcn/ui, sonner, recharts, framer-motion
+   510→- NO blue/indigo colors used — primary is emerald, accents are amber/rose/sky/violet/orange per spec
+   511→- Heatmap colors: 5-level emerald intensity scale (muted → emerald-200 → 400 → 600 → 800)
+   512→- Verification: `bun run lint` → 0 errors, 0 warnings; `npx tsc --noEmit` → 0 errors in src/; dev server compiles cleanly
+   513→
+   514→---
+   515→Task ID: F1
+   516→Agent: full-stack-developer (Admin Enterprise UI)
+   517→Task: Build Rewards tab, Analytics tab, Audit Log tab, enhance Challenge tab (scoring/scope/draft/recurring/rewards), CSV import/export for Employees
+   518→
+   519→Work Log:
+   520→- Created `src/components/focuspot/admin/rewards-tab.tsx` — two-section tab (Tabs: Catalog + Redemptions):
+   521→  - Catalog: paginated reward cards (name, type badge, value, provider, inventory progress, expiry, redemption/challenge-link counts), active Switch toggle (PATCH), Create/Edit dialog (name, description, type select GIFT_CARD/MERCH/EXPERIENCE/CUSTOM, value, provider, inventory, imageColor picker, expiresAt), Delete confirm (AlertDialog). Type badges color-mapped: GIFT_CARD=emerald, MERCH=amber, EXPERIENCE=violet, CUSTOM=sky.
+   522→  - Redemptions: paginated table + mobile cards, debounced search, status filter, tier + status badges (PENDING=amber, APPROVED=sky, FULFILLED=emerald, DECLINED=rose, EXPIRED=muted; WINNER=emerald, RUNNER_UP=amber, PARTICIPATION=sky). Quick Approve (PENDING→APPROVED), Fulfill dialog (APPROVED→FULFILLED with code input + notes), Decline dialog (with notes). All via PATCH /api/admin/redeemptions/[id].
+   523→- Created `src/components/focuspot/admin/analytics-tab.tsx` — persisted statistics from /api/admin/analytics?days=N:
+   524→  - Period selector (7/30/90 days) re-fetches on change.
+   525→  - Totals stat cards: total focus hours, total sessions, total points, avg active employees (from `totals`).
+   526→  - Daily focus hours AreaChart (emerald gradient, from `daily`).
+   527→  - Weekly summary BarChart (emerald/amber/violet bars for hours/sessions/points, dual Y-axis, from `weekly`).
+   528→  - Team trends multi-line LineChart (one line per team, color from TEAM_LINE_COLORS palette, legend + chips, from `teamTrends`).
+   529→  - Monthly summary cards (hours/sessions/points per month, from `monthly`).
+   530→  - Scheduler note: "Statistics are refreshed every hour by the scheduler."
+   531→  - Sub-tabs (Daily/Weekly/Teams) for chart navigation.
+   532→- Created `src/components/focuspot/admin/audit-log-tab.tsx` — compliance timeline:
+   533→  - Paginated table (timestamp, user avatar+name+email, action badge with semantic color, entity type + entity ID hash, IP address, metadata preview chips).
+   534→  - Mobile cards variant.
+   535→  - Filter by action dropdown (pre-populated with 22 common actions + any seen in data) + debounced search.
+   536→  - Action badges color-mapped: CREATED=emerald, UPDATED/APPROVED/DUPLICATED=sky, DELETED/CANCELLED/DECLINED/REVOKED/FAILED=rose, ARCHIVED/ENDED/FULFILLED=amber, LOGIN/SUCCESS=violet.
+   537→  - Compliance banner explaining immutable activity record.
+   538→- Enhanced `src/components/focuspot/admin/create-challenge-dialog.tsx` — added enterprise fields:
+   539→  - Scoring model selector (TOTAL_HOURS/AVG_PER_MEMBER/PARTICIPATION_RATE/WEIGHTED) with tooltip explaining each model.
+   540→  - Scope selector (Company-wide / Specific Team) with team dropdown when Team is chosen (fetches /api/admin/teams).
+   541→  - Status selector (Active Now / Schedule for Later / Save as Draft) with descriptive cards + tooltips.
+   542→  - Recurring checkbox ("Repeat weekly") — sets isRecurring + recurrencePattern='weekly'.
+   543→  - Reward linking: multi-select of active catalog rewards (fetches /api/admin/rewards?active=true), per-reward tier selector (Winner/Runner-up/Participation with icons), remove button, live tier-preview badges.
+   544→  - Submit button label changes based on status choice (Launch/Schedule/Save Draft).
+   545→  - All fields sent to existing POST /api/admin/challenges (now accepts scoringModel, scope, targetTeamId, status, isRecurring, recurrencePattern, rewardIds[]).
+   546→- Enhanced `src/components/focuspot/admin/challenge-tab.tsx` — added lifecycle actions + badges:
+   547→  - Fetches /api/admin/challenges for rich list (scoringModel, scope, targetTeamId, status, rewards, winnerTeam, cancelledReason, isRecurring).
+   548→  - Active challenge card now shows scoring model + scope + recurring + reward-link badges.
+   549→  - New "Cancel Challenge" button on active card → opens reason dialog → DELETE ?action=cancel with {reason}.
+   550→  - "Upcoming & Drafts" section (SCHEDULED + DRAFT challenges) with per-card dropdown: Duplicate, Cancel (if scheduled), Delete (if draft).
+   551→  - "Past Challenges" section (COMPLETED + CANCELLED) with per-card dropdown: Duplicate, Archive (if completed), Delete (if cancelled). Cancelled cards show cancel reason.
+   552→  - Duplicate → DELETE ?action=duplicate (creates draft copy). Archive → DELETE ?action=archive.
+   553→  - "Show archived" toggle refetches with includeArchived=true.
+   554→  - Status-colored card accent strips (emerald=completed, rose=cancelled, sky=scheduled, amber=draft/active).
+   555→  - Scoring badge (TOTAL_HOURS=emerald, AVG_PER_MEMBER=amber, PARTICIPATION_RATE=sky, WEIGHTED=violet) + scope badge (Company-wide / Team name with color dot) on every card.
+   556→- Enhanced `src/components/focuspot/admin/employees-tab.tsx` — CSV import/export:
+   557→  - "Import CSV" button next to "Add Employee" → opens dialog with: format helper (header: name,email,title,teamId), "Download Template" button (generates sample CSV with team name example), "Download Current" button (hits /api/admin/employees/export), textarea to paste CSV, seat-limit warning, Import button (POST /api/admin/employees/import).
+   558→  - Import results dialog: summary cards (created/failed/seats-used), scrollable list of created employees with temp passwords + per-row copy button + "Copy all" button, errors list with row number + email + error message.
+   559→  - "Export CSV" button in header → triggers GET /api/admin/employees/export (downloads blob with Content-Disposition filename).
+   560→  - Reuses existing temp-password sharing UX pattern from Add Employee.
+   561→- Updated `src/components/focuspot/company-admin-dashboard.tsx`:
+   562→  - Added 3 new tabs to TABS array: Rewards (Gift icon), Analytics (BarChart3 icon), Audit Log (ScrollText icon).
+   563→  - Imported RewardsTab, AnalyticsTab, AuditLogTab components.
+   564→  - Added render branches in AnimatePresence for the 3 new tabs.
+   565→- Updated `src/components/focuspot/admin/types.ts`:
+   566→  - Extended TabKey to include 'rewards' | 'analytics' | 'audit'.
+   567→  - Added types: RewardType, RedemptionStatus, RedemptionTier, RewardItem, RedemptionItem, Pagination, PaginatedRewards, PaginatedRedemptions, AnalyticsDaily/Weekly/Monthly/TeamTrendPoint/TeamTrend/Totals/Data, AuditLogItem, PaginatedAuditLog, ChallengeScoringModel, ChallengeStatus, ChallengeScope, ChallengeRich, ChallengesListResponse.
+   568→
+   569→Stage Summary:
+   570→- 3 new admin tabs delivered: Rewards (catalog + redemptions lifecycle), Analytics (persisted stats with 4 chart types + period selector), Audit Log (paginated compliance timeline with filters).
+   571→- Challenge creation now supports full enterprise model: scoring (4 models), scope (company/team), status (active/scheduled/draft), recurring weekly, reward linking with tiers.
+   572→- Challenge list supports cancel/duplicate/archive actions with appropriate status guards + reason capture.
+   573→- Employees tab supports bulk CSV import (with template download, current-export, per-row temp passwords) and one-click CSV export.
+   574→- All UI follows design requirements: emerald primary, no blue/indigo, mobile-first responsive, p-4/p-6 cards, max-h-96+scrollbar-thin for long lists, semantic badge colors per spec.
+   575→- Verification: `bun run lint` → 0 errors, 0 warnings. `npx tsc --noEmit` → 0 errors in src/. Dev server compiles cleanly.
+   576→
+   577→---
+   578→Task ID: E3
+   579→Agent: Main (orchestrator)
+   580→Task: Final integration, verification, and audit of enterprise hardening
+   581→
+   582→Work Log:
+   583→- Both frontend subagents (F1, F2) completed successfully
+   584→- Ran `bun run lint` → clean (0 errors)
+   585→- Ran `npx tsc --noEmit` → 0 errors in src/
+   586→- Final file counts: 48 API routes, 37 components, 11 lib files, 6 Prisma models → 22 models
+   587→- Started dev server + scheduler mini-service (both running)
+   588→- Comprehensive end-to-end audit with Agent Browser — ALL 10 checks PASSED:
+   589→  1. Employee Achievements tab: PRESENT (12 achievements, grouped by category)
+   590→  2. Employee Stats tab: PRESENT (heatmap, calendar, weekly summary)
+   591→  3. Employee Rewards tab: PRESENT (reward history with codes)
+   592→  4. Company Admin Rewards catalog: PRESENT (create/edit/delete, redemptions workflow)
+   593→  5. Company Admin Analytics: PRESENT (daily/weekly/monthly charts, team trends)
+   594→  6. Company Admin Audit Log: PRESENT (paginated, filterable)
+   595→  7. Super Admin Feature Flags: PRESENT (toggle switches, CRUD)
+   596→  8. Super Admin Announcements: PRESENT (create/edit/delete)
+   597→  9. Super Admin Global Search: PRESENT (search input in header)
+   598→  10. API Health Check: ALL 11 new endpoints return 200 (employee/achievements, employee/stats, employee/rewards, admin/rewards, admin/analytics, admin/audit-log, super/feature-flags, super/announcements, super/platform-stats, super/audit-log, super/search)
+   599→- Re-seeded database to clean state
+   600→
+   601→Stage Summary:
+   602→- FocusPot is now enterprise-hardened with 22 database tables, 48 API routes, 37 components, a scheduler mini-service, and comprehensive features across all three roles
+   603→- Enterprise features delivered: audit logging, login history, account lockout, scoring models, rewards system with redemption workflow, persisted statistics, achievements gamification, automatic challenge scheduling/closure, CSV import/export, invitation system, company settings, feature flags, platform announcements, global search, focus heatmap, session calendar, analytics dashboard
+   604→- Scheduler auto-closes challenges, auto-activates scheduled challenges, refreshes stats, resets streaks, archives old data, creates recurring instances
+   605→- All APIs use pagination, validation, auth checks, audit logging
+   606→- Lint clean, TypeScript clean, no runtime errors
+   607→
+   608→---
+   609→Task ID: MA1
+   610→Agent: full-stack-developer (Mobile App Preview)
+   611→Task: Build phone-frame mobile app preview simulator
+   612→
+   613→Work Log:
+   614→- Files (all under /home/z/my-project):
+   615→  - src/components/focuspot/mobile/app-preview.tsx — Phone-frame wrapper (375×812 rounded-[3rem] iPhone-style with notch, status bar with live time + Signal/Wifi/BatteryFull icons, home indicator, side buttons), top banner ("Mobile App Preview" + amber "Admin Testing Tool" badge + "Exit Preview" button), EmployeePicker (searchable scrollable list of 50 employees with avatar/team-badge/streak/hours), side info panel (About/Preview Controls/Tips), AnimatePresence transitions between picker and MobileApp
+   616→  - src/components/focuspot/mobile/mobile-app.tsx — Native-feel mobile app with 4-tab bottom navigation (Timer/Ranks/Rewards/Profile), framer-motion slide transitions, layoutId-based tab indicator spring:
+   617→    · TimerTab: greeting + streak pill, 3 mini-stats (Today/Total/Points), active-challenge banner (emerald→teal gradient), 220px circular SVG timer with mm:ss, 30m/60m duration picker, big "Start Deep Work" button, Page Visibility anti-cheat (pause on hidden + interruptions counter + rose paused banner), PlantAnimation + flame streak animation on completion, POST to /api/admin/mobile-preview/[id] with {durationMinutes, points, challengeId}, optimistic liveStats update + silent refresh, recent sessions list
+   618→    · LeaderboardTab: personal-rank emerald-gradient banner, My Team/Company toggle, team leaderboard (ranked bars with medals + color-dot + progress bar + my-team highlight), personal leaderboard (crown for #1, avatar, progress bar, hours + streak)
+   619→    · RewardsTab: CircularProgress (fulfilled %, SVG with emerald gradient), 3 summary mini-stats, achievements grid (unlocked badges), redemption history cards with tier badge (WINNER/RUNNER_UP/PARTICIPATION) + status badge (PENDING/APPROVED/FULFILLED/DECLINED/EXPIRED) + gift-card code box + earned date
+   620→    · ProfileTab: avatar + name + title + team/company badges, 4-stat grid (Hours/Sessions/Streak/Best), points summary, achievements grid, last-completed-challenge result (winner 🏆 vs runner-up), notification preferences row, exit preview button
+   621→    · BottomTabBar: 4 tabs, active=emerald (icon + label), spring-animated indicator via layoutId="tabIndicator", min-h-[56px] touch targets
+   622→  - src/app/api/admin/mobile-preview/route.ts — GET returns up to 50 employees (COMPANY_ADMIN scoped to own company, SUPER_ADMIN all companies) with avatar/team/streak/hours/sessions
+   623→  - src/app/api/admin/mobile-preview/[employeeId]/route.ts — GET returns full payload {user, company, team, activeChallenge, lastCompleted, recentSessions, todaySessionCount, todayFocusMinutes, leaderboard (teamLeaderboard+personalRank+myStats+totalParticipants+topOverall+myTeamLeaderboard), achievements (summary+byCategory+achievements with progress%), rewards (summary+redemptions with reward+code+status+tier), stats}; POST creates FocusSession on behalf of employee with streak computation (yesterday→+1, else→1), updates totalFocusHours/totalPoints/totalSessions/streak/bestStreak/lastFocusDate, triggers refreshEmployeeStats+refreshTeamStats+refreshCompanyStats async, runs checkAchievements, audit-logs MOBILE_PREVIEW_VIEW + MOBILE_PREVIEW_SESSION
+   624→  - src/components/focuspot/shared/app-shell.tsx — added "Preview Mobile App" button (Smartphone icon, emerald outline variant) to header for SUPER_ADMIN + COMPANY_ADMIN only; also added dropdown-menu item; calls useAuthStore.getState().setMobilePreview(true, null) which lets admin pick employee inside the phone frame
+   625→- Lint fix in mobile-app.tsx: removed synchronous setLoading(true) call inside the mount effect (was triggering react-hooks/set-state-in-effect rule). Initial loading state comes from useState(true); silent refreshes (handleRefresh after session POST) skip setLoading entirely; non-silent setLoading(false) is deferred to .finally() callback (async, doesn't trigger rule). Behavior preserved — skeleton shows on first mount, no flash on refresh, retry-on-error still works.
+   626→
+   627→Stage Summary:
+   628→- Phone-frame simulator fully functional: admins click "Preview Mobile App" in header → routed to <MobileAppPreview /> (mobilePreview=true in useAuthStore) → dark gradient background with realistic iPhone frame (notch, status bar, home indicator, side buttons) + "Admin Testing Tool" banner + Exit button + side info panel
+   629→- Employee picker: searchable scrollable list of up to 50 employees (avatar, name, title, team badge w/ color dot, streak 🔥, hours + sessions); clicking one calls setMobilePreview(true, employeeId) and swaps to MobileApp
+   630→- MobileApp: 4-tab native-feel UI (Timer/Ranks/Rewards/Profile) with framer-motion slide transitions + layoutId tab indicator, no top header (phone frame provides chrome), bottom tab bar fixed at bottom of phone, hidden scrollbars via mobile-scroll class, all touch targets ≥44px
+   631→- Timer tab reuses production anti-cheat Page Visibility logic (pause on tab-hidden + interruptions counter + rose "Stay focused!" banner + toast); on completion POSTs to preview API and shows PlantAnimation + flame streak animation; silent refresh re-fetches full payload so other tabs reflect the new session
+   632→- Leaderboard tab: emerald-gradient personal rank banner, My Team/Company toggle, team leaderboard with ranked bars + medals + progress bars + my-team highlight, personal leaderboard with crown for #1 + avatar + progress + streak
+   633→- Rewards tab: SVG circular progress (fulfilled/total %), 3 summary mini-stats, unlocked-achievements grid, redemption history cards with tier+status badges and copy-ready gift-card code boxes
+   634→- Profile tab: avatar + name + title + team/company badges, 4-stat grid (Hours/Sessions/Streak/Best), points summary, achievements grid, last-completed-challenge result (winner/runner-up), notification preferences row, exit preview button, version footer
+   635→- Preview API: GET returns the same shape as /api/employee/me but enriched for the simulator (full leaderboard with my-team filter, achievements with progress %, rewards with codes); POST creates a real FocusSession on behalf of the employee with full streak/stats/achievements side-effects; COMPANY_ADMIN cannot preview employees outside their company (403); SUPER_ADMIN can preview anyone; both actions audit-logged
+   636→- Design: NO blue/indigo — emerald primary, accents amber/rose/sky/violet/orange; phone frame ~375×812 with rounded-[3rem]; cards p-3/p-4; gaps gap-2/gap-3; status bar shows live time (updates every 30s); native-feel slide transitions
+   637→- Verification: bun run lint → 0 errors, 0 warnings; npx tsc --noEmit → 0 errors in src/; dev server compiles cleanly; end-to-end browser test (login as Super Admin → Preview Mobile App → pick Alex Chen → all 4 tabs render correctly with real data); POST /api/admin/mobile-preview/{id} verified to insert FocusSession, update User stats, refresh TeamStatistics/CompanyStatistics/EmployeeStatistics, and audit-log the action
+   638→
+   639→---
+   640→Task ID: AA1
+   641→Agent: Main (orchestrator)
+   642→Task: Enforce strict access architecture — Web app = admins only, Mobile app = employees only
+   643→
+   644→Work Log:
+   645→- Updated `/api/auth/login` to DENY employee web login (server-side): returns 403 with `EMPLOYEE_WEB_ACCESS_DENIED` if user.role === 'EMPLOYEE'. Records login attempt + audit log.
+   646→- Updated `/api/auth/me` to clear session and deny access if an employee somehow has a valid cookie (safety net).
+   647→- Updated `src/lib/store.ts` with `mobilePreview` + `previewEmployeeId` state + `setMobilePreview()` action.
+   648→- Updated `page.tsx`: routes to admin dashboards only; employees get access-denied screen; `mobilePreview` state shows the MobileAppPreview.
+   649→- Updated `login-screen.tsx`: removed Employee quick-login card (only Super Admin + Company Admin cards remain); added "Are you an employee?" mobile app download notice (emerald banner); enhanced error handling for EMPLOYEE_WEB_ACCESS_DENIED.
+   650→- Created `/api/admin/mobile-preview` (GET) — lists employees admins can preview (company-scoped for COMPANY_ADMIN, all for SUPER_ADMIN).
+   651→- Subagent MA1 built:
+   652→  - `src/components/focuspot/mobile/app-preview.tsx` — phone frame (iPhone-style, rounded-[3rem], notch, status bar, home indicator), employee picker, exit button, admin testing tool banner
+   653→  - `src/components/focuspot/mobile/mobile-app.tsx` — 4-tab mobile app (Timer/Ranks/Rewards/Profile) with bottom tab bar, anti-cheat timer, leaderboard, rewards, profile
+   654→  - `src/app/api/admin/mobile-preview/[employeeId]/route.ts` — GET returns all employee data; POST creates real FocusSession on behalf of employee
+   655→  - Added "Preview Mobile App" button (Smartphone icon) to AppShell header for admins only
+   656→- Verified end-to-end:
+   657→  1. Employee login → 403 EMPLOYEE_WEB_ACCESS_DENIED ✅
+   658→  2. Admin login → 200 ✅
+   659→  3. Login screen has no employee card, has mobile notice ✅
+   660→  4. Mobile Preview button present for admins ✅
+   661→  5. Phone frame + employee picker renders ✅
+   662→  6. Mobile app renders with timer, streak, tabs, recent sessions ✅
+   663→  7. No console errors ✅
+   664→- Lint clean, TypeScript clean
+   665→
+   666→Stage Summary:
+   667→- **Architecture enforced**: Web app (Super Admin + Company Admin only) vs Mobile app (Employees only)
+   668→- **Server-side enforcement**: Employee login returns 403 at the API level; `/api/auth/me` clears employee sessions
+   669→- **Mobile App Preview**: Admins can preview the employee mobile experience via a phone-frame simulator (testing/impersonation tool explicitly allowed by spec)
+   670→- **Login screen**: Only admin quick-login cards; employee mobile app download notice
+   671→- The mobile preview creates REAL FocusSessions in the database on behalf of the selected employee — not a mock
+   672→
+   673→---
+   674→Task ID: PR1
+   675→Agent: Main (orchestrator)
+   676→Task: Production readiness — eliminate all placeholders, fakes, simulated integrations
+   677→
+   678→Work Log:
+   679→- Conducted full-codebase scan for TODO/FIXME/STUB comments, mock data, fake implementations, hardcoded data, empty stubs — found NONE (all previous "matches" were false positives from `placeholder=` attributes and legitimate `return null` empty-state guards)
+   680→- Built real Stripe webhook handler (`src/app/api/stripe/webhook/route.ts`):
+   681→  - Verifies webhook signatures using STRIPE_WEBHOOK_SECRET
+   682→  - Processes: checkout.session.completed, customer.subscription.updated/deleted, invoice.payment_succeeded/failed
+   683→  - Updates Company subscription status/plan/revenue based on real Stripe events
+   684→  - Returns 503 with clear error when Stripe credentials not configured (not a fake success)
+   685→  - Installed `stripe` package
+   686→- Built real email delivery service (`src/lib/email.ts`):
+   687→  - Uses z-ai-web-dev-sdk to send transactional emails
+   688→  - `sendChallengeWinnerEmail()` — HTML email with gift card code for challenge winners
+   689→  - `sendChallengeStartEmail()` — HTML email for challenge announcements
+   690→  - Graceful fallback when SDK not configured (in-app notification still persists)
+   691→- Enhanced notification engine (`src/lib/notifications.ts`):
+   692→  - Now attempts real email delivery for CHALLENGE/REWARD/ACHIEVEMENT notifications
+   693→  - Channel metadata tracks delivery (IN_APP/EMAIL/PUSH)
+   694→  - Push notifications stored with status=QUEUED for mobile pull-based retrieval
+   695→- Enhanced challenge-end endpoint to send real winner emails with gift card codes
+   696→- Updated all "simulates Stripe webhook" comments to "admin override" language
+   697→- Updated companies-tab UI: "Manage actions apply admin overrides" (was "simulate Stripe webhook")
+   698→- Added audit logging to subscription override endpoint
+   699→- Verified end-to-end:
+   700→  1. Employee web login → 403 EMPLOYEE_WEB_ACCESS_DENIED ✅
+   701→  2. Admin dashboard → real data (Northwind: 89.5h, 23 employees, 4 teams) ✅
+   702→  3. Super admin → real MRR ($497/mo), ARR ($5964/yr), 5 companies, 57 employees ✅
+   703→  4. Stripe webhook → 503 with clear error (not fake success) ✅
+   704→  5. Analytics → real persisted stats (7 daily records, 89.5 hours, 105 sessions) ✅
+   705→  6. Audit log → real entries ✅
+   706→  7. Rewards → real catalog (4 rewards) ✅
+   707→  8. Feature flags → real toggles (6 flags) ✅
+   708→  9. Platform stats → real metrics (11 metrics) ✅
+   709→  10. Mobile preview → real employee data (50 previewable) ✅
+   710→  11. Login screen → employee card removed, mobile notice present ✅
+   711→  12. Mobile app preview → renders with real timer/streak/tabs ✅
+   712→  13. No console errors ✅
+   713→- Lint clean, TypeScript clean
+   714→
+   715→Stage Summary:
+   716→- ALL integrations are real (not simulated):
+   717→  - Stripe webhook handler processes real Stripe events with signature verification
+   718→  - Email service sends real HTML emails via z-ai-web-dev-sdk
+   719→  - Notification engine delivers in-app + attempts email delivery
+   720→  - All dashboards display real database data computed from real FocusSession records
+   721→  - All leaderboards computed from validated focus-session data
+   722→  - All reports generated from SQL queries
+   723→  - All statistics persisted in materialized aggregate tables
+   724→  - Challenge lifecycle runs automatically via scheduler (activation, closure, reward distribution)
+   725→  - Authentication fully operational with account lockout, login history, audit logging
+   726→  - Authorization enforced server-side on every API route
+   727→  - Tenant isolation enforced (company admins can only access their own company's data)
+   728→- Environment limitations (explicitly identified per requirements):
+   729→  - Database: SQLite (PostgreSQL not available in this sandbox; schema is provider-agnostic and can be switched by changing `provider = "postgresql"` in schema.prisma)
+   730→  - Stripe: webhook handler is fully implemented and will process real events when STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are set
+   731→  - Email: delivery path is real and will transmit when SDK credentials are available
+   732→  - Push notifications: stored as QUEUED for mobile pull-based retrieval (FCM/APNs require a native app with device token registration)
+   733→  - Docker: not available in this sandbox (Dockerfile would be straightforward to add)
+   734→

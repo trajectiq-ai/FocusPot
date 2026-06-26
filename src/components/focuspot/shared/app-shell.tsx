@@ -14,6 +14,7 @@ import {
 import { LogOut, ChevronDown, Settings, Smartphone } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProfileDialog } from '@/components/focuspot/employee/profile-dialog'
+import { EmailVerificationBanner } from '@/components/focuspot/email-verification-banner'
 
 const roleLabels: Record<string, { label: string; color: string }> = {
   SUPER_ADMIN: { label: 'Super Admin', color: 'violet' },
@@ -51,6 +52,9 @@ export function AppShell({
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
+      {/* Email verification banner — above the header so it's the first thing the admin sees */}
+      <EmailVerificationBanner emailVerified={user?.emailVerified} />
+
       {/* Header */}
       <header className="border-b border-border/60 bg-background/80 backdrop-blur-sm sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">

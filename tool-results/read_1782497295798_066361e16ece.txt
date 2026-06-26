@@ -1,0 +1,696 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { useState, useEffect } from 'react'
+     4→     4→import { motion } from 'framer-motion'
+     5→     5→import {
+     6→     6→  Brain,
+     7→     7→  Trophy,
+     8→     8→  Shield,
+     9→     9→  Flame,
+    10→    10→  Timer,
+    11→    11→  ArrowRight,
+    12→    12→  Sparkles,
+    13→    13→  Building2,
+    14→    14→  User,
+    15→    15→  Crown,
+    16→    16→  Check,
+    17→    17→  Smartphone,
+    18→    18→} from 'lucide-react'
+    19→    19→import { Button } from '@/components/ui/button'
+    20→    20→import { Input } from '@/components/ui/input'
+    21→    21→import { Label } from '@/components/ui/label'
+    22→    22→import { Card, CardContent } from '@/components/ui/card'
+    23→    23→import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+    24→    24→import { useAuthStore } from '@/lib/store'
+    25→    25→import { toast } from 'sonner'
+    26→    26→import { getColor } from '@/lib/colors'
+    27→    27→
+    28→    28→type DemoAccount = {
+    29→    29→  id: string
+    30→    30→  email: string
+    31→    31→  name: string
+    32→    32→  role: string
+    33→    33→  avatarColor: string
+    34→    34→  company?: { name: string }
+    35→    35→  team?: { name: string }
+    36→    36→}
+    37→    37→
+    38→    38→type PlanKey = 'STARTER' | 'GROWTH'
+    39→    39→
+    40→    40→const PLANS: {
+    41→    41→  key: PlanKey
+    42→    42→  name: string
+    43→    43→  price: number
+    44→    44→  seats: number
+    45→    45→  tagline: string
+    46→    46→  features: string[]
+    47→    47→}[] = [
+    48→    48→  {
+    49→    49→    key: 'STARTER',
+    50→    50→    name: 'Starter',
+    51→    51→    price: 99,
+    52→    52→    seats: 50,
+    53→    53→    tagline: 'For small teams getting started',
+    54→    54→    features: ['Up to 50 employees', 'Weekly team challenges', 'Privacy Shield analytics', 'Email support'],
+    55→    55→  },
+    56→    56→  {
+    57→    57→    key: 'GROWTH',
+    58→    58→    name: 'Growth',
+    59→    59→    price: 199,
+    60→    60→    seats: 200,
+    61→    61→    tagline: 'For growing organizations',
+    62→    62→    features: ['Up to 200 employees', 'Everything in Starter', 'Unlimited teams', 'Priority support'],
+    63→    63→  },
+    64→    64→]
+    65→    65→
+    66→    66→export function LoginScreen() {
+    67→    67→  const { setUser } = useAuthStore()
+    68→    68→  const [email, setEmail] = useState('')
+    69→    69→  const [password, setPassword] = useState('demo')
+    70→    70→  const [loading, setLoading] = useState(false)
+    71→    71→  const [demos, setDemos] = useState<{
+    72→    72→    superAdmin: DemoAccount | null
+    73→    73→    companyAdmin: DemoAccount | null
+    74→    74→    employee: DemoAccount | null
+    75→    75→  }>({ superAdmin: null, companyAdmin: null, employee: null })
+    76→    76→
+    77→    77→  useEffect(() => {
+    78→    78→    fetch('/api/quick-login', { cache: 'no-store' })
+    79→    79→      .then((r) => r.json())
+    80→    80→      .then(setDemos)
+    81→    81→      .catch(() => {})
+    82→    82→  }, [])
+    83→    83→
+    84→    84→  const handleLogin = async (loginEmail: string, loginPassword = 'demo') => {
+    85→    85→    setLoading(true)
+    86→    86→    try {
+    87→    87→      const res = await fetch('/api/auth/login', {
+    88→    88→        method: 'POST',
+    89→    89→        headers: { 'Content-Type': 'application/json' },
+    90→    90→        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+    91→    91→      })
+    92→    92→      const data = await res.json()
+    93→    93→      if (!res.ok) {
+    94→    94→        if (data.error === 'EMPLOYEE_WEB_ACCESS_DENIED') {
+    95→    95→          toast.error('Employees must use the FocusPot mobile app (Android & iOS).', { duration: 6000 })
+    96→    96→        } else {
+    97→    97→          throw new Error(data.error || data.message || 'Login failed')
+    98→    98→        }
+    99→    99→        return
+   100→   100→      }
+   101→   101→      setUser(data)
+   102→   102→      toast.success(`Welcome back, ${data.name.split(' ')[0]}!`)
+   103→   103→    } catch (e: any) {
+   104→   104→      toast.error(e.message || 'Login failed')
+   105→   105→    } finally {
+   106→   106→      setLoading(false)
+   107→   107→    }
+   108→   108→  }
+   109→   109→
+   110→   110→  const roleCards: {
+   111→   111→    account: DemoAccount | null
+   112→   112→    icon: typeof Crown
+   113→   113→    label: string
+   114→   114→    desc: string
+   115→   115→    color: string
+   116→   116→  }[] = [
+   117→   117→    {
+   118→   118→      account: demos.superAdmin,
+   119→   119→      icon: Crown,
+   120→   120→      label: 'Super Admin',
+   121→   121→      desc: 'Platform owner. See all companies, revenue & subscriptions.',
+   122→   122→      color: 'violet',
+   123→   123→    },
+   124→   124→    {
+   125→   125→      account: demos.companyAdmin,
+   126→   126→      icon: Building2,
+   127→   127→      label: 'Company Admin',
+   128→   128→      desc: 'HR Manager. Set challenges, manage teams, view anonymous analytics.',
+   129→   129→      color: 'amber',
+   130→   130→    },
+   131→   131→  ]
+   132→   132→
+   133→   133→  return (
+   134→   134→    <div className="min-h-screen flex flex-col bg-background">
+   135→   135→      {/* Header */}
+   136→   136→      <header className="border-b border-border/60 backdrop-blur-sm bg-background/80 sticky top-0 z-10">
+   137→   137→        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+   138→   138→          <div className="flex items-center gap-2.5">
+   139→   139→            <div className="w-9 h-9 rounded-xl brand-gradient flex items-center justify-center shadow-sm">
+   140→   140→              <span className="text-lg">🌿</span>
+   141→   141→            </div>
+   142→   142→            <div>
+   143→   143→              <span className="font-bold text-lg tracking-tight">FocusPot</span>
+   144→   144→              <span className="hidden sm:inline ml-2 text-xs text-muted-foreground">Team Deep Work Competitions</span>
+   145→   145→            </div>
+   146→   146→          </div>
+   147→   147→          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+   148→   148→            <span className="hidden sm:inline">B2B SaaS</span>
+   149→   149→            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+   150→   150→            <span>$99–$199/mo</span>
+   151→   151→          </div>
+   152→   152→        </div>
+   153→   153→      </header>
+   154→   154→
+   155→   155→      {/* Hero */}
+   156→   156→      <section className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 py-10 sm:py-16">
+   157→   157→        <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
+   158→   158→          {/* Left: pitch */}
+   159→   159→          <motion.div
+   160→   160→            initial={{ opacity: 0, y: 20 }}
+   161→   161→            animate={{ opacity: 1, y: 0 }}
+   162→   162→            transition={{ duration: 0.5 }}
+   163→   163→          >
+   164→   164→            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 text-xs font-medium mb-5">
+   165→   165→              <Sparkles className="w-3.5 h-3.5" />
+   166→   166→              Fight digital burnout as a team
+   167→   167→            </div>
+   168→   168→            <h1 className="text-4xl sm:text-5xl font-bold tracking-tight leading-[1.1] mb-5">
+   169→   169→              Turn <span className="brand-text">Deep Work</span> into a
+   170→   170→              <br className="hidden sm:block" /> team competition.
+   171→   171→            </h1>
+   172→   172→            <p className="text-lg text-muted-foreground mb-7 max-w-md">
+   173→   173→              Companies set a weekly focus challenge with a prize. Employees track
+   174→   174→              distraction-free hours. The winning team takes the pot.
+   175→   175→            </p>
+   176→   176→            <div className="space-y-3 mb-8">
+   177→   177→              {[
+   178→   178→                { icon: Timer, text: 'Anti-cheat timer that pauses the moment you leave the app' },
+   179→   179→                { icon: Shield, text: 'Privacy Shield: admins see only anonymous team data, never individuals' },
+   180→   180→                { icon: Flame, text: 'Streaks & gamification keep employees coming back daily' },
+   181→   181→              ].map((f, i) => (
+   182→   182→                <motion.div
+   183→   183→                  key={i}
+   184→   184→                  initial={{ opacity: 0, x: -10 }}
+   185→   185→                  animate={{ opacity: 1, x: 0 }}
+   186→   186→                  transition={{ delay: 0.2 + i * 0.1 }}
+   187→   187→                  className="flex items-start gap-3"
+   188→   188→                >
+   189→   189→                  <div className="mt-0.5 w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+   190→   190→                    <f.icon className="w-4 h-4 text-primary" />
+   191→   191→                  </div>
+   192→   192→                  <span className="text-sm text-foreground/80">{f.text}</span>
+   193→   193→                </motion.div>
+   194→   194→              ))}
+   195→   195→            </div>
+   196→   196→          </motion.div>
+   197→   197→
+   198→   198→          {/* Right: login card */}
+   199→   199→          <motion.div
+   200→   200→            initial={{ opacity: 0, y: 20 }}
+   201→   201→            animate={{ opacity: 1, y: 0 }}
+   202→   202→            transition={{ duration: 0.5, delay: 0.15 }}
+   203→   203→          >
+   204→   204→            <Card className="border-border/60 shadow-xl shadow-primary/5">
+   205→   205→              <CardContent className="p-6 sm:p-8">
+   206→   206→                <Tabs defaultValue="signin" className="w-full">
+   207→   207→                  <TabsList className="grid grid-cols-2 w-full mb-6">
+   208→   208→                    <TabsTrigger value="signin">Sign In</TabsTrigger>
+   209→   209→                    <TabsTrigger value="register">Get Started</TabsTrigger>
+   210→   210→                  </TabsList>
+   211→   211→
+   212→   212→                  {/* SIGN IN TAB (existing behavior) */}
+   213→   213→                  <TabsContent value="signin" className="mt-0 outline-none">
+   214→   214→                    <h2 className="text-xl font-semibold mb-1">Sign in to FocusPot</h2>
+   215→   215→                    <p className="text-sm text-muted-foreground mb-6">
+   216→   216→                      Pick a role below to explore the demo instantly.
+   217→   217→                    </p>
+   218→   218→
+   219→   219→                    {/* Quick login role cards — Super Admin & Company Admin only */}
+   220→   220→                    <div className="space-y-2.5 mb-5">
+   221→   221→                      {roleCards.map((rc) => {
+   222→   222→                        const c = getColor(rc.color)
+   223→   223→                        return (
+   224→   224→                          <button
+   225→   225→                            key={rc.label}
+   226→   226→                            onClick={() => rc.account && handleLogin(rc.account.email)}
+   227→   227→                            disabled={!rc.account || loading}
+   228→   228→                            className="w-full text-left group disabled:opacity-50"
+   229→   229→                          >
+   230→   230→                            <div className="flex items-center gap-3 p-3 rounded-xl border border-border/60 hover:border-primary/40 hover:bg-muted/50 transition-all">
+   231→   231→                              <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${c.gradient} flex items-center justify-center shrink-0`}>
+   232→   232→                                <rc.icon className="w-5 h-5 text-white" />
+   233→   233→                              </div>
+   234→   234→                              <div className="flex-1 min-w-0">
+   235→   235→                                <div className="flex items-center gap-2">
+   236→   236→                                  <span className="font-medium text-sm">{rc.label}</span>
+   237→   237→                                  {rc.account && (
+   238→   238→                                    <span className="text-xs text-muted-foreground truncate">· {rc.account.name}</span>
+   239→   239→                                  )}
+   240→   240→                                </div>
+   241→   241→                                <p className="text-xs text-muted-foreground truncate">{rc.desc}</p>
+   242→   242→                              </div>
+   243→   243→                              <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" />
+   244→   244→                            </div>
+   245→   245→                          </button>
+   246→   246→                        )
+   247→   247→                      })}
+   248→   248→                    </div>
+   249→   249→
+   250→   250→                    {/* Employee mobile app notice */}
+   251→   251→                    <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40 mb-5">
+   252→   252→                      <div className="w-9 h-9 rounded-lg bg-emerald-500 flex items-center justify-center shrink-0">
+   253→   253→                        <Smartphone className="w-4 h-4 text-white" />
+   254→   254→                      </div>
+   255→   255→                      <div className="flex-1 min-w-0">
+   256→   256→                        <p className="text-xs font-medium text-emerald-800 dark:text-emerald-200">Are you an employee?</p>
+   257→   257→                        <p className="text-xs text-emerald-700 dark:text-emerald-300">
+   258→   258→                          Download the FocusPot mobile app (Android & iOS). The web portal is for administrators only.
+   259→   259→                        </p>
+   260→   260→                      </div>
+   261→   261→                    </div>
+   262→   262→
+   263→   263→                    <div className="relative my-5">
+   264→   264→                      <div className="absolute inset-0 flex items-center">
+   265→   265→                        <span className="w-full border-t border-border/60" />
+   266→   266→                      </div>
+   267→   267→                      <div className="relative flex justify-center">
+   268→   268→                        <span className="bg-card px-3 text-xs text-muted-foreground">or sign in with email</span>
+   269→   269→                      </div>
+   270→   270→                    </div>
+   271→   271→
+   272→   272→                    <form
+   273→   273→                      onSubmit={(e) => {
+   274→   274→                        e.preventDefault()
+   275→   275→                        if (email) handleLogin(email, password)
+   276→   276→                      }}
+   277→   277→                      className="space-y-3"
+   278→   278→                    >
+   279→   279→                      <div className="space-y-1.5">
+   280→   280→                        <Label htmlFor="email" className="text-xs">Work email</Label>
+   281→   281→                        <Input
+   282→   282→                          id="email"
+   283→   283→                          type="email"
+   284→   284→                          placeholder="you@company.com"
+   285→   285→                          value={email}
+   286→   286→                          onChange={(e) => setEmail(e.target.value)}
+   287→   287→                          required
+   288→   288→                        />
+   289→   289→                      </div>
+   290→   290→                      <div className="space-y-1.5">
+   291→   291→                        <Label htmlFor="password" className="text-xs">Password</Label>
+   292→   292→                        <Input
+   293→   293→                          id="password"
+   294→   294→                          type="password"
+   295→   295→                          value={password}
+   296→   296→                          onChange={(e) => setPassword(e.target.value)}
+   297→   297→                        />
+   298→   298→                      </div>
+   299→   299→                      <Button type="submit" className="w-full" disabled={loading || !email}>
+   300→   300→                        {loading ? 'Signing in…' : 'Sign in'}
+   301→   301→                      </Button>
+   302→   302→                    </form>
+   303→   303→                    <p className="text-xs text-muted-foreground text-center mt-4">
+   304→   304→                      Demo mode — any seeded account works with password <code className="font-mono bg-muted px-1 py-0.5 rounded">demo</code>
+   305→   305→                    </p>
+   306→   306→                  </TabsContent>
+   307→   307→
+   308→   308→                  {/* GET STARTED TAB */}
+   309→   309→                  <TabsContent value="register" className="mt-0 outline-none">
+   310→   310→                    <GetStartedForm loading={loading} setLoading={setLoading} />
+   311→   311→                  </TabsContent>
+   312→   312→                </Tabs>
+   313→   313→              </CardContent>
+   314→   314→            </Card>
+   315→   315→          </motion.div>
+   316→   316→        </div>
+   317→   317→      </section>
+   318→   318→
+   319→   319→      {/* Footer */}
+   320→   320→      <footer className="border-t border-border/60 mt-auto">
+   321→   321→        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-3">
+   322→   322→          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+   323→   323→            <Trophy className="w-4 h-4" />
+   324→   324→            <span>FocusPot — Deep work, together.</span>
+   325→   325→          </div>
+   326→   326→          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+   327→   327→            <span>Privacy-first</span>
+   328→   328→            <span>·</span>
+   329→   329→            <span>Anti-cheat timer</span>
+   330→   330→            <span>·</span>
+   331→   331→            <span>Stripe billing</span>
+   332→   332→          </div>
+   333→   333→        </div>
+   334→   334→      </footer>
+   335→   335→    </div>
+   336→   336→  )
+   337→   337→}
+   338→   338→
+   339→   339→/* ------------------------- Get Started (Register) ------------------------- */
+   340→   340→
+   341→   341→function GetStartedForm({
+   342→   342→  loading,
+   343→   343→  setLoading,
+   344→   344→}: {
+   345→   345→  loading: boolean
+   346→   346→  setLoading: (b: boolean) => void
+   347→   347→}) {
+   348→   348→  const { setUser } = useAuthStore()
+   349→   349→  const [mode, setMode] = useState<'hr' | 'employee'>('hr')
+   350→   350→
+   351→   351→  return (
+   352→   352→    <div>
+   353→   353→      <h2 className="text-xl font-semibold mb-1">Get started with FocusPot</h2>
+   354→   354→      <p className="text-sm text-muted-foreground mb-5">
+   355→   355→        Join the platform in under a minute.
+   356→   356→      </p>
+   357→   357→
+   358→   358→      {/* Segmented control: HR vs Employee */}
+   359→   359→      <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-muted/60 mb-6">
+   360→   360→        <button
+   361→   361→          type="button"
+   362→   362→          onClick={() => setMode('hr')}
+   363→   363→          className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+   364→   364→            mode === 'hr'
+   365→   365→              ? 'bg-background shadow-sm text-foreground'
+   366→   366→              : 'text-muted-foreground hover:text-foreground'
+   367→   367→          }`}
+   368→   368→        >
+   369→   369→          <Building2 className="w-4 h-4" />
+   370→   370→          I&apos;m an HR Manager
+   371→   371→        </button>
+   372→   372→        <button
+   373→   373→          type="button"
+   374→   374→          onClick={() => setMode('employee')}
+   375→   375→          className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+   376→   376→            mode === 'employee'
+   377→   377→              ? 'bg-background shadow-sm text-foreground'
+   378→   378→              : 'text-muted-foreground hover:text-foreground'
+   379→   379→          }`}
+   380→   380→        >
+   381→   381→          <User className="w-4 h-4" />
+   382→   382→          I&apos;m an Employee
+   383→   383→        </button>
+   384→   384→      </div>
+   385→   385→
+   386→   386→      {mode === 'hr' ? (
+   387→   387→        <CompanyRegistrationForm loading={loading} setLoading={setLoading} setUser={setUser} />
+   388→   388→      ) : (
+   389→   389→        <EmployeeJoinForm loading={loading} setLoading={setLoading} setUser={setUser} />
+   390→   390→      )}
+   391→   391→    </div>
+   392→   392→  )
+   393→   393→}
+   394→   394→
+   395→   395→/* ------------------------- Company Registration ------------------------- */
+   396→   396→
+   397→   397→function CompanyRegistrationForm({
+   398→   398→  loading,
+   399→   399→  setLoading,
+   400→   400→  setUser,
+   401→   401→}: {
+   402→   402→  loading: boolean
+   403→   403→  setLoading: (b: boolean) => void
+   404→   404→  setUser: (u: any) => void
+   405→   405→}) {
+   406→   406→  const [companyName, setCompanyName] = useState('')
+   407→   407→  const [domain, setDomain] = useState('')
+   408→   408→  const [adminName, setAdminName] = useState('')
+   409→   409→  const [adminEmail, setAdminEmail] = useState('')
+   410→   410→  const [password, setPassword] = useState('')
+   411→   411→  const [plan, setPlan] = useState<PlanKey>('STARTER')
+   412→   412→
+   413→   413→  const validate = (): string | null => {
+   414→   414→    if (companyName.trim().length < 2) return 'Company name must be at least 2 characters'
+   415→   415→    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain.trim())) return 'Enter a valid domain like acme.com'
+   416→   416→    if (adminName.trim().length < 2) return 'Your name must be at least 2 characters'
+   417→   417→    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail.trim())) return 'Enter a valid work email'
+   418→   418→    if (password.length < 6) return 'Password must be at least 6 characters'
+   419→   419→    return null
+   420→   420→  }
+   421→   421→
+   422→   422→  const handleSubmit = async (e: React.FormEvent) => {
+   423→   423→    e.preventDefault()
+   424→   424→    const err = validate()
+   425→   425→    if (err) {
+   426→   426→      toast.error(err)
+   427→   427→      return
+   428→   428→    }
+   429→   429→    setLoading(true)
+   430→   430→    try {
+   431→   431→      const res = await fetch('/api/auth/register-company', {
+   432→   432→        method: 'POST',
+   433→   433→        headers: { 'Content-Type': 'application/json' },
+   434→   434→        body: JSON.stringify({
+   435→   435→          companyName: companyName.trim(),
+   436→   436→          domain: domain.trim().toLowerCase(),
+   437→   437→          adminName: adminName.trim(),
+   438→   438→          adminEmail: adminEmail.trim().toLowerCase(),
+   439→   439→          password,
+   440→   440→          plan,
+   441→   441→        }),
+   442→   442→      })
+   443→   443→      const data = await res.json()
+   444→   444→      if (!res.ok) throw new Error(data.error || 'Registration failed')
+   445→   445→
+   446→   446→      setUser(data)
+   447→   447→      toast.success(
+   448→   448→        `Company created! Your join code is ${data.company?.joinCode ?? '—'} — share it with your team.`,
+   449→   449→        { duration: 6000 }
+   450→   450→      )
+   451→   451→    } catch (e: any) {
+   452→   452→      toast.error(e.message || 'Registration failed')
+   453→   453→    } finally {
+   454→   454→      setLoading(false)
+   455→   455→    }
+   456→   456→  }
+   457→   457→
+   458→   458→  return (
+   459→   459→    <form onSubmit={handleSubmit} className="space-y-3">
+   460→   460→      <div className="grid sm:grid-cols-2 gap-3">
+   461→   461→        <div className="space-y-1.5">
+   462→   462→          <Label htmlFor="company-name" className="text-xs">Company name</Label>
+   463→   463→          <Input
+   464→   464→            id="company-name"
+   465→   465→            value={companyName}
+   466→   466→            onChange={(e) => setCompanyName(e.target.value)}
+   467→   467→            placeholder="Acme Inc."
+   468→   468→            maxLength={100}
+   469→   469→          />
+   470→   470→        </div>
+   471→   471→        <div className="space-y-1.5">
+   472→   472→          <Label htmlFor="company-domain" className="text-xs">Company domain</Label>
+   473→   473→          <Input
+   474→   474→            id="company-domain"
+   475→   475→            value={domain}
+   476→   476→            onChange={(e) => setDomain(e.target.value)}
+   477→   477→            placeholder="acme.com"
+   478→   478→            autoCapitalize="none"
+   479→   479→            autoCorrect="off"
+   480→   480→          />
+   481→   481→        </div>
+   482→   482→      </div>
+   483→   483→
+   484→   484→      <div className="grid sm:grid-cols-2 gap-3">
+   485→   485→        <div className="space-y-1.5">
+   486→   486→          <Label htmlFor="admin-name" className="text-xs">Your name</Label>
+   487→   487→          <Input
+   488→   488→            id="admin-name"
+   489→   489→            value={adminName}
+   490→   490→            onChange={(e) => setAdminName(e.target.value)}
+   491→   491→            placeholder="Jordan Smith"
+   492→   492→            maxLength={100}
+   493→   493→          />
+   494→   494→        </div>
+   495→   495→        <div className="space-y-1.5">
+   496→   496→          <Label htmlFor="admin-email" className="text-xs">Work email</Label>
+   497→   497→          <Input
+   498→   498→            id="admin-email"
+   499→   499→            type="email"
+   500→   500→            value={adminEmail}
+   501→   501→            onChange={(e) => setAdminEmail(e.target.value)}
+   502→   502→            placeholder="jordan@acme.com"
+   503→   503→            autoCapitalize="none"
+   504→   504→            autoCorrect="off"
+   505→   505→          />
+   506→   506→        </div>
+   507→   507→      </div>
+   508→   508→
+   509→   509→      <div className="space-y-1.5">
+   510→   510→        <Label htmlFor="admin-password" className="text-xs">Password</Label>
+   511→   511→        <Input
+   512→   512→          id="admin-password"
+   513→   513→          type="password"
+   514→   514→          value={password}
+   515→   515→          onChange={(e) => setPassword(e.target.value)}
+   516→   516→          placeholder="Min. 6 characters"
+   517→   517→          autoComplete="new-password"
+   518→   518→        />
+   519→   519→      </div>
+   520→   520→
+   521→   521→      {/* Plan selector */}
+   522→   522→      <div className="space-y-2 pt-1">
+   523→   523→        <Label className="text-xs">Choose your plan</Label>
+   524→   524→        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+   525→   525→          {PLANS.map((p) => {
+   526→   526→            const active = plan === p.key
+   527→   527→            const c = getColor(p.key === 'GROWTH' ? 'violet' : 'emerald')
+   528→   528→            return (
+   529→   529→              <button
+   530→   530→                key={p.key}
+   531→   531→                type="button"
+   532→   532→                onClick={() => setPlan(p.key)}
+   533→   533→                className={`relative text-left p-4 rounded-xl border-2 transition-all ${
+   534→   534→                  active
+   535→   535→                    ? 'border-primary bg-primary/5 shadow-sm'
+   536→   536→                    : 'border-border/60 hover:border-primary/40 hover:bg-muted/40'
+   537→   537→                }`}
+   538→   538→              >
+   539→   539→                {active && (
+   540→   540→                  <span className="absolute top-2 right-2 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
+   541→   541→                    <Check className="w-3 h-3" strokeWidth={3} />
+   542→   542→                  </span>
+   543→   543→                )}
+   544→   544→                <div className="flex items-center gap-2 mb-1">
+   545→   545→                  <span className={`w-2.5 h-2.5 rounded-full ${c.dot}`} />
+   546→   546→                  <span className="font-semibold text-sm">{p.name}</span>
+   547→   547→                </div>
+   548→   548→                <div className="flex items-baseline gap-1 mb-1">
+   549→   549→                  <span className="text-2xl font-bold tracking-tight">${p.price}</span>
+   550→   550→                  <span className="text-xs text-muted-foreground">/mo</span>
+   551→   551→                </div>
+   552→   552→                <p className="text-[11px] text-muted-foreground mb-2">Up to {p.seats} employees</p>
+   553→   553→                <ul className="space-y-1">
+   554→   554→                  {p.features.map((f) => (
+   555→   555→                    <li key={f} className="flex items-start gap-1.5 text-[11px] text-foreground/70">
+   556→   556→                      <Check className="w-3 h-3 mt-0.5 text-primary shrink-0" />
+   557→   557→                      <span>{f}</span>
+   558→   558→                    </li>
+   559→   559→                  ))}
+   560→   560→                </ul>
+   561→   561→              </button>
+   562→   562→            )
+   563→   563→          })}
+   564→   564→        </div>
+   565→   565→      </div>
+   566→   566→
+   567→   567→      <Button type="submit" className="w-full" disabled={loading} size="lg">
+   568→   568→        {loading ? 'Creating workspace…' : `Create company — $${PLANS.find((p) => p.key === plan)!.price}/mo`}
+   569→   569→      </Button>
+   570→   570→      <p className="text-[11px] text-muted-foreground text-center">
+   571→   571→        You&apos;ll be logged in as the company admin. Cancel anytime.
+   572→   572→      </p>
+   573→   573→    </form>
+   574→   574→  )
+   575→   575→}
+   576→   576→
+   577→   577→/* ------------------------- Employee Join ------------------------- */
+   578→   578→
+   579→   579→function EmployeeJoinForm({
+   580→   580→  loading,
+   581→   581→  setLoading,
+   582→   582→  setUser,
+   583→   583→}: {
+   584→   584→  loading: boolean
+   585→   585→  setLoading: (b: boolean) => void
+   586→   586→  setUser: (u: any) => void
+   587→   587→}) {
+   588→   588→  const [joinCode, setJoinCode] = useState('')
+   589→   589→  const [name, setName] = useState('')
+   590→   590→  const [email, setEmail] = useState('')
+   591→   591→  const [password, setPassword] = useState('')
+   592→   592→
+   593→   593→  const validate = (): string | null => {
+   594→   594→    if (joinCode.trim().length < 4) return 'Enter your company join code'
+   595→   595→    if (name.trim().length < 2) return 'Your name must be at least 2 characters'
+   596→   596→    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return 'Enter a valid work email'
+   597→   597→    if (password.length < 6) return 'Password must be at least 6 characters'
+   598→   598→    return null
+   599→   599→  }
+   600→   600→
+   601→   601→  const handleSubmit = async (e: React.FormEvent) => {
+   602→   602→    e.preventDefault()
+   603→   603→    const err = validate()
+   604→   604→    if (err) {
+   605→   605→      toast.error(err)
+   606→   606→      return
+   607→   607→    }
+   608→   608→    setLoading(true)
+   609→   609→    try {
+   610→   610→      const res = await fetch('/api/auth/register-employee', {
+   611→   611→        method: 'POST',
+   612→   612→        headers: { 'Content-Type': 'application/json' },
+   613→   613→        body: JSON.stringify({
+   614→   614→          joinCode: joinCode.trim().toUpperCase(),
+   615→   615→          name: name.trim(),
+   616→   616→          email: email.trim().toLowerCase(),
+   617→   617→          password,
+   618→   618→        }),
+   619→   619→      })
+   620→   620→      const data = await res.json()
+   621→   621→      if (!res.ok) throw new Error(data.error || 'Failed to join')
+   622→   622→
+   623→   623→      setUser(data)
+   624→   624→      toast.success('Welcome to FocusPot!')
+   625→   625→    } catch (e: any) {
+   626→   626→      toast.error(e.message || 'Failed to join')
+   627→   627→    } finally {
+   628→   628→      setLoading(false)
+   629→   629→    }
+   630→   630→  }
+   631→   631→
+   632→   632→  return (
+   633→   633→    <form onSubmit={handleSubmit} className="space-y-3">
+   634→   634→      <div className="space-y-1.5">
+   635→   635→        <Label htmlFor="join-code" className="text-xs">Join code</Label>
+   636→   636→        <Input
+   637→   637→          id="join-code"
+   638→   638→          value={joinCode}
+   639→   639→          onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+   640→   640→          placeholder="NORTHWIND-7K2M"
+   641→   641→          autoCapitalize="characters"
+   642→   642→          autoCorrect="off"
+   643→   643→          spellCheck={false}
+   644→   644→          className="font-mono uppercase tracking-wide"
+   645→   645→        />
+   646→   646→        <p className="text-[11px] text-muted-foreground">
+   647→   647→          Ask your HR manager for your company&apos;s join code.
+   648→   648→        </p>
+   649→   649→      </div>
+   650→   650→
+   651→   651→      <div className="space-y-1.5">
+   652→   652→        <Label htmlFor="emp-name" className="text-xs">Your name</Label>
+   653→   653→        <Input
+   654→   654→          id="emp-name"
+   655→   655→          value={name}
+   656→   656→          onChange={(e) => setName(e.target.value)}
+   657→   657→          placeholder="Alex Chen"
+   658→   658→          maxLength={100}
+   659→   659→        />
+   660→   660→      </div>
+   661→   661→
+   662→   662→      <div className="space-y-1.5">
+   663→   663→        <Label htmlFor="emp-email" className="text-xs">Work email</Label>
+   664→   664→        <Input
+   665→   665→          id="emp-email"
+   666→   666→          type="email"
+   667→   667→          value={email}
+   668→   668→          onChange={(e) => setEmail(e.target.value)}
+   669→   669→          placeholder="alex@yourcompany.com"
+   670→   670→          autoCapitalize="none"
+   671→   671→          autoCorrect="off"
+   672→   672→        />
+   673→   673→      </div>
+   674→   674→
+   675→   675→      <div className="space-y-1.5">
+   676→   676→        <Label htmlFor="emp-password" className="text-xs">Password</Label>
+   677→   677→        <Input
+   678→   678→          id="emp-password"
+   679→   679→          type="password"
+   680→   680→          value={password}
+   681→   681→          onChange={(e) => setPassword(e.target.value)}
+   682→   682→          placeholder="Min. 6 characters"
+   683→   683→          autoComplete="new-password"
+   684→   684→        />
+   685→   685→      </div>
+   686→   686→
+   687→   687→      <Button type="submit" className="w-full" disabled={loading} size="lg">
+   688→   688→        {loading ? 'Joining…' : 'Join my team'}
+   689→   689→      </Button>
+   690→   690→      <p className="text-[11px] text-muted-foreground text-center">
+   691→   691→        You&apos;ll be added to your company&apos;s default team.
+   692→   692→      </p>
+   693→   693→    </form>
+   694→   694→  )
+   695→   695→}
+   696→   696→

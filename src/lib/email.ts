@@ -189,13 +189,16 @@ export async function sendWelcomeEmail(params: {
 
 /**
  * Sends a password reset email.
+ * The reset link uses the `?reset=TOKEN` query param consumed by the
+ * single-route web app (no separate `/reset-password` page needed).
  */
 export async function sendPasswordResetEmail(params: {
   to: string
   userName: string
   resetToken: string
 }) {
-  const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://focuspot.io'}/reset-password?token=${params.resetToken}`
+  const base = process.env.NEXT_PUBLIC_APP_URL || 'https://focuspot.io'
+  const resetUrl = `${base}/?reset=${params.resetToken}`
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px;">
       <div style="text-align: center; margin-bottom: 32px;">
@@ -218,5 +221,46 @@ export async function sendPasswordResetEmail(params: {
     subject: 'Reset your FocusPot password',
     html,
     text: `Hi ${params.userName}, reset your password at: ${resetUrl}`,
+  })
+}
+
+/**
+ * Sends an email verification link.
+ * Uses the `?verify=success|invalid` redirect pattern handled by the
+ * `/api/auth/verify-email` route.
+ */
+export async function sendVerificationEmail(params: {
+  to: string
+  userName: string
+  verifyToken: string
+}) {
+  const base = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const verifyUrl = `${base}/api/auth/verify-email?token=${params.verifyToken}`
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px;">
+      <div style="text-align: center; margin-bottom: 32px;">
+        <div style="display: inline-block; width: 56px; height: 56px; background: linear-gradient(135deg, #10b981, #14b8a6); border-radius: 16px; line-height: 56px; font-size: 28px;">🌿</div>
+        <h1 style="color: #065f46; margin: 16px 0 4px; font-size: 24px;">Verify your email</h1>
+        <p style="color: #6b7280; margin: 0; font-size: 15px;">Confirm your FocusPot account</p>
+      </div>
+      <p style="color: #6b7280; font-size: 14px; line-height: 1.6;">
+        Hi ${params.userName}, please verify your email address to complete your FocusPot account setup. This helps us keep your team's data secure.
+      </p>
+      <div style="text-align: center; margin: 24px 0;">
+        <a href="${verifyUrl}" style="display: inline-block; background: #10b981; color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">Verify Email</a>
+      </div>
+      <p style="color: #9ca3af; font-size: 12px;">
+        Or paste this link into your browser: ${verifyUrl}
+      </p>
+      <p style="color: #9ca3af; font-size: 12px;">
+        This link expires in 24 hours. If you didn't create an account, you can safely ignore this email.
+      </p>
+    </div>
+  `
+  return sendEmail({
+    to: params.to,
+    subject: 'Verify your FocusPot email',
+    html,
+    text: `Hi ${params.userName}, verify your email at: ${verifyUrl}`,
   })
 }

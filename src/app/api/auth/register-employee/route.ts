@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { setSession } from '@/lib/auth'
 import { hashPassword } from '@/lib/password'
-import { sendWelcomeEmail } from '@/lib/email'
+import { sendWelcomeEmail, sendVerificationEmail } from '@/lib/email'
+import { randomBytes } from 'crypto'
 import { z } from 'zod'
 
 const registerSchema = z.object({
@@ -88,6 +89,23 @@ export async function POST(req: NextRequest) {
     joinCode: company.joinCode,
   }).catch(() => {})
 
+  // Generate an email verification token and send the verification email.
+  // Fire-and-forget — registration response is never blocked on email delivery.
+  const verifyToken = randomBytes(32).toString('hex')
+  const verifyExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+  db.emailVerifyToken
+    .create({
+      data: { userId: user.id, token: verifyToken, expiresAt: verifyExpiresAt },
+    })
+    .then(() =>
+      sendVerificationEmail({
+        to: user.email,
+        userName: user.name,
+        verifyToken,
+      })
+    )
+    .catch(() => {})
+
   await setSession(user.id)
 
   return NextResponse.json({
@@ -98,5 +116,6 @@ export async function POST(req: NextRequest) {
     companyId: user.companyId,
     teamId: user.teamId,
     avatarColor: user.avatarColor,
+    emailVerified: user.emailVerified,
   })
 }

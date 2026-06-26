@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+*.log
+db/*.db
+db/*.db-journal
+backups
+agent-ctx
+.env
+.env.local
+dev.log
+server.log
+scheduler.log
+mini-services/scheduler/node_modules

@@ -1,15 +1,23 @@
 'use client'
 
-import { useEffect } from 'react'
+import { Suspense, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { CheckCircle2, AlertCircle } from 'lucide-react'
 import { useAuthStore } from '@/lib/store'
+import { toast } from 'sonner'
 import { LoginScreen } from '@/components/focuspot/login-screen'
 import { CompanyAdminDashboard } from '@/components/focuspot/company-admin-dashboard'
 import { SuperAdminDashboard } from '@/components/focuspot/super-admin-dashboard'
 import { MobileAppPreview } from '@/components/focuspot/mobile/app-preview'
+import { ResetPasswordScreen } from '@/components/focuspot/reset-password-screen'
 
-export default function Home() {
+function PageLogic() {
   const { user, loading, setUser, mobilePreview } = useAuthStore()
+  const searchParams = useSearchParams()
+  const resetToken = searchParams.get('reset')
+  const verify = searchParams.get('verify')
 
+  // Fetch the current session
   useEffect(() => {
     fetch('/api/auth/me', { cache: 'no-store' })
       .then((r) => r.json())
@@ -18,6 +26,43 @@ export default function Home() {
       })
       .catch(() => setUser(null))
   }, [setUser])
+
+  // Handle `?verify=success|invalid` → show toast (deduped) + clean URL
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (verify !== 'success' && verify !== 'invalid') return
+
+    const dedupeKey = `focuspot:verifyToastShown:${verify}`
+    let alreadyShown = false
+    try {
+      alreadyShown = window.sessionStorage.getItem(dedupeKey) === '1'
+    } catch {
+      alreadyShown = false
+    }
+    if (!alreadyShown) {
+      if (verify === 'success') {
+        toast.success('Email verified! You can now access all FocusPot features.', {
+          icon: <CheckCircle2 className="w-4 h-4" />,
+          duration: 5000,
+        })
+      } else {
+        toast.error('This verification link is invalid or has expired.', {
+          icon: <AlertCircle className="w-4 h-4" />,
+          duration: 6000,
+        })
+      }
+      try {
+        window.sessionStorage.setItem(dedupeKey, '1')
+      } catch {
+        // ignore
+      }
+    }
+
+    // Strip the verify param from the URL so refreshes don't re-fire the toast.
+    const url = new URL(window.location.href)
+    url.searchParams.delete('verify')
+    window.history.replaceState({}, '', url.toString())
+  }, [verify])
 
   if (loading) {
     return (
@@ -30,6 +75,11 @@ export default function Home() {
         </div>
       </div>
     )
+  }
+
+  // Reset password flow — only triggered when user is NOT logged in
+  if (resetToken && resetToken.length >= 10 && !user) {
+    return <ResetPasswordScreen token={resetToken} />
   }
 
   // Not logged in → login screen (admin-only web portal)
@@ -67,5 +117,24 @@ export default function Home() {
         </button>
       </div>
     </div>
+  )
+}
+
+export default function Home() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl brand-gradient flex items-center justify-center animate-pulse">
+              <span className="text-2xl">🌿</span>
+            </div>
+            <p className="text-sm text-muted-foreground">Loading FocusPot…</p>
+          </div>
+        </div>
+      }
+    >
+      <PageLogic />
+    </Suspense>
   )
 }

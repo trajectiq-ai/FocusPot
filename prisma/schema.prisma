@@ -1,11 +1,17 @@
 // FocusPot - B2B Deep Work Competition Platform
-// Enterprise-hardened Prisma schema for SQLite
+// Production-ready Prisma schema (PostgreSQL for production, SQLite for development)
+//
+// To switch to PostgreSQL for production:
+//   1. Set DATABASE_URL=postgresql://user:pass@host:5432/focuspot?schema=public
+//   2. Change provider below to "postgresql"
+//   3. Run: bun run db:push
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
+  // Use "postgresql" for production, "sqlite" for local development
   provider = "sqlite"
   url      = env("DATABASE_URL")
 }
@@ -40,6 +46,7 @@ model User {
   lockedUntil         DateTime?
   passwordChangedAt   DateTime @default(now())
   lastLoginAt         DateTime?
+  emailVerified       Boolean  @default(false)
 
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
@@ -54,6 +61,8 @@ model User {
   userAchievements    UserAchievement[]
   stats               EmployeeStatistics[]
   notificationPref    NotificationPreference?
+  passwordResetTokens PasswordResetToken[]
+  emailVerifyTokens   EmailVerifyToken[]
 
   @@index([companyId])
   @@index([teamId])
@@ -504,4 +513,36 @@ model PlatformAnnouncement {
 
   @@index([active])
   @@index([startsAt, endsAt])
+}
+
+// ============================================================
+// PASSWORD RESET & EMAIL VERIFICATION
+// ============================================================
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([token])
+}
+
+model EmailVerifyToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([token])
 }

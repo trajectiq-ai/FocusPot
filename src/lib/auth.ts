@@ -1,7 +1,29 @@
+import { createHmac, timingSafeEqual } from 'crypto'
 import { cookies } from 'next/headers'
 import { db } from './db'
 
+/**
+ * Secure session management.
+ *
+ * Cookies are signed with HMAC using SESSION_SECRET to prevent tampering.
+ * Format: "userId.signature"
+ */
+
 export const SESSION_COOKIE = 'focuspot_session'
+const SECRET = process.env.SESSION_SECRET || 'dev-only-fallback-secret-change-in-production'
+
+function sign(value: string): string {
+  return createHmac('sha256', SECRET).update(value).digest('hex')
+}
+
+function verifySignature(value: string, signature: string): boolean {
+  const expected = sign(value)
+  try {
+    return timingSafeEqual(Buffer.from(expected), Buffer.from(signature))
+  } catch {
+    return false
+  }
+}
 
 export type SessionUser = {
   id: string
@@ -11,12 +33,25 @@ export type SessionUser = {
   companyId: string | null
   teamId: string | null
   avatarColor: string
+  emailVerified: boolean
 }
 
 export async function getSession(): Promise<SessionUser | null> {
   const cookieStore = await cookies()
-  const userId = cookieStore.get(SESSION_COOKIE)?.value
-  if (!userId) return null
+  const raw = cookieStore.get(SESSION_COOKIE)?.value
+  if (!raw) return null
+
+  // Parse "userId.signature"
+  const dotIndex = raw.lastIndexOf('.')
+  if (dotIndex === -1) return null
+
+  const userId = raw.substring(0, dotIndex)
+  const signature = raw.substring(dotIndex + 1)
+
+  // Verify signature to prevent cookie tampering
+  if (!verifySignature(userId, signature)) {
+    return null
+  }
 
   const user = await db.user.findUnique({
     where: { id: userId },
@@ -28,6 +63,7 @@ export async function getSession(): Promise<SessionUser | null> {
       companyId: true,
       teamId: true,
       avatarColor: true,
+      emailVerified: true,
     },
   })
 
@@ -37,9 +73,12 @@ export async function getSession(): Promise<SessionUser | null> {
 
 export async function setSession(userId: string) {
   const cookieStore = await cookies()
-  cookieStore.set(SESSION_COOKIE, userId, {
+  const signature = sign(userId)
+  const cookieValue = `${userId}.${signature}`
+  cookieStore.set(SESSION_COOKIE, cookieValue, {
     httpOnly: true,
     sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
     maxAge: 60 * 60 * 24 * 7, // 7 days
     path: '/',
   })
