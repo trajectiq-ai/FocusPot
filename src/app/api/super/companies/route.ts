@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 
-// PATCH /api/super/companies/[id]
-// Simulates a Stripe webhook updating subscription status.
-// Body: { subscriptionStatus, plan?, monthlyRevenue? }
+// GET /api/super/companies
+// Returns all companies with utilization metrics for the Super Admin.
 export async function GET() {
   const session = await getSession()
   if (!session || session.role !== 'SUPER_ADMIN') {

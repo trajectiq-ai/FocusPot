@@ -15,7 +15,7 @@ const registerSchema = z.object({
 
 // POST /api/auth/register-company
 // Full company onboarding: creates company + company admin + a default team,
-// simulates Stripe subscription activation, logs the admin in.
+// activates the subscription (Stripe checkout is initiated separately), logs the admin in.
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   const parsed = registerSchema.safeParse(body)

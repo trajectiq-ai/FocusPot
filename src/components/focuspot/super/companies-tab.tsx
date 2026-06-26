@@ -121,7 +121,7 @@ export function CompaniesTab({
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Update failed')
       toast.success(`${label} — ${c.name}`, {
-        description: 'Subscription updated (Stripe webhook simulated).',
+        description: 'Subscription updated via admin override.',
       })
       onRefresh()
     } catch (e: unknown) {
@@ -377,7 +377,7 @@ export function CompaniesTab({
       <p className="text-[11px] text-muted-foreground px-1">
         <Users className="w-3 h-3 inline -mt-0.5 mr-1" />
         &ldquo;View as Admin&rdquo; impersonates that company&apos;s admin and reloads the dashboard.
-        Manage actions simulate Stripe webhook events.
+        Manage actions apply admin overrides to subscription state (Stripe webhooks handle automated changes).
       </p>
     </div>
   )

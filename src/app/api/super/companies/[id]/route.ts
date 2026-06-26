@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
+import { auditLog } from '@/lib/audit'
 
 // GET /api/super/companies/[id]
 // Returns detailed info about a single company for the Super Admin.
@@ -74,7 +75,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 // PATCH /api/super/companies/[id]
-// Simulates a Stripe webhook updating subscription status & plan.
+// Admin override for subscription status & plan.
+// In production, subscription changes are normally driven by Stripe webhooks
+// (POST /api/stripe/webhook). This endpoint allows Super Admins to manually
+// correct subscription state (e.g. for offline payments, support cases).
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
   if (!session || session.role !== 'SUPER_ADMIN') {
@@ -100,6 +104,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       monthlyRevenue: subscriptionStatus === 'CANCELED' ? 0 : newRevenue,
       seats: newPlan === 'GROWTH' ? 200 : 50,
     },
+  })
+
+  await auditLog({
+    userId: session.id,
+    action: 'SUBSCRIPTION_OVERRIDE',
+    entityType: 'Company',
+    entityId: id,
+    companyId: id,
+    metadata: { subscriptionStatus, plan, previousStatus: company.subscriptionStatus, previousPlan: company.plan },
   })
 
   return NextResponse.json({ company: updated })
