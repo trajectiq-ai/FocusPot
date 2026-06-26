@@ -50,7 +50,7 @@ export function SuperAdminDashboard() {
     setRefreshing(true)
     setError(null)
     try {
-      const res = await fetch('/api/super/dashboard')
+      const res = await fetch('/api/super/dashboard', { cache: 'no-store' })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error || 'Failed to load dashboard')

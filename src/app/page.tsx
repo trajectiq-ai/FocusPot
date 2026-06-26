@@ -11,7 +11,7 @@ export default function Home() {
   const { user, loading, setUser, setLoading } = useAuthStore()
 
   useEffect(() => {
-    fetch('/api/auth/me')
+    fetch('/api/auth/me', { cache: 'no-store' })
       .then((r) => r.json())
       .then((data) => {
         setUser(data.user || null)

@@ -65,7 +65,7 @@ export function EmployeeLeaderboard({ activeChallengeId }: Props) {
     const url = activeChallengeId
       ? `/api/employee/leaderboard?challengeId=${encodeURIComponent(activeChallengeId)}`
       : '/api/employee/leaderboard'
-    fetch(url)
+    fetch(url, { cache: 'no-store' })
       .then((r) => {
         if (!r.ok) throw new Error('Failed to load leaderboard')
         return r.json()

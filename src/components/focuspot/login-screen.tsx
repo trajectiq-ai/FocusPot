@@ -74,7 +74,7 @@ export function LoginScreen() {
   }>({ superAdmin: null, companyAdmin: null, employee: null })
 
   useEffect(() => {
-    fetch('/api/quick-login')
+    fetch('/api/quick-login', { cache: 'no-store' })
       .then((r) => r.json())
       .then(setDemos)
       .catch(() => {})

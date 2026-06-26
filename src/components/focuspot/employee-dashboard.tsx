@@ -69,7 +69,7 @@ export function EmployeeDashboard() {
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/employee/me')
+    fetch('/api/employee/me', { cache: 'no-store' })
       .then((r) => r.json())
       .then((data) => {
         if (!cancelled) setMe(data)
