@@ -604,3 +604,68 @@ Stage Summary:
 - Scheduler auto-closes challenges, auto-activates scheduled challenges, refreshes stats, resets streaks, archives old data, creates recurring instances
 - All APIs use pagination, validation, auth checks, audit logging
 - Lint clean, TypeScript clean, no runtime errors
+
+---
+Task ID: MA1
+Agent: full-stack-developer (Mobile App Preview)
+Task: Build phone-frame mobile app preview simulator
+
+Work Log:
+- Files (all under /home/z/my-project):
+  - src/components/focuspot/mobile/app-preview.tsx — Phone-frame wrapper (375×812 rounded-[3rem] iPhone-style with notch, status bar with live time + Signal/Wifi/BatteryFull icons, home indicator, side buttons), top banner ("Mobile App Preview" + amber "Admin Testing Tool" badge + "Exit Preview" button), EmployeePicker (searchable scrollable list of 50 employees with avatar/team-badge/streak/hours), side info panel (About/Preview Controls/Tips), AnimatePresence transitions between picker and MobileApp
+  - src/components/focuspot/mobile/mobile-app.tsx — Native-feel mobile app with 4-tab bottom navigation (Timer/Ranks/Rewards/Profile), framer-motion slide transitions, layoutId-based tab indicator spring:
+    · TimerTab: greeting + streak pill, 3 mini-stats (Today/Total/Points), active-challenge banner (emerald→teal gradient), 220px circular SVG timer with mm:ss, 30m/60m duration picker, big "Start Deep Work" button, Page Visibility anti-cheat (pause on hidden + interruptions counter + rose paused banner), PlantAnimation + flame streak animation on completion, POST to /api/admin/mobile-preview/[id] with {durationMinutes, points, challengeId}, optimistic liveStats update + silent refresh, recent sessions list
+    · LeaderboardTab: personal-rank emerald-gradient banner, My Team/Company toggle, team leaderboard (ranked bars with medals + color-dot + progress bar + my-team highlight), personal leaderboard (crown for #1, avatar, progress bar, hours + streak)
+    · RewardsTab: CircularProgress (fulfilled %, SVG with emerald gradient), 3 summary mini-stats, achievements grid (unlocked badges), redemption history cards with tier badge (WINNER/RUNNER_UP/PARTICIPATION) + status badge (PENDING/APPROVED/FULFILLED/DECLINED/EXPIRED) + gift-card code box + earned date
+    · ProfileTab: avatar + name + title + team/company badges, 4-stat grid (Hours/Sessions/Streak/Best), points summary, achievements grid, last-completed-challenge result (winner 🏆 vs runner-up), notification preferences row, exit preview button
+    · BottomTabBar: 4 tabs, active=emerald (icon + label), spring-animated indicator via layoutId="tabIndicator", min-h-[56px] touch targets
+  - src/app/api/admin/mobile-preview/route.ts — GET returns up to 50 employees (COMPANY_ADMIN scoped to own company, SUPER_ADMIN all companies) with avatar/team/streak/hours/sessions
+  - src/app/api/admin/mobile-preview/[employeeId]/route.ts — GET returns full payload {user, company, team, activeChallenge, lastCompleted, recentSessions, todaySessionCount, todayFocusMinutes, leaderboard (teamLeaderboard+personalRank+myStats+totalParticipants+topOverall+myTeamLeaderboard), achievements (summary+byCategory+achievements with progress%), rewards (summary+redemptions with reward+code+status+tier), stats}; POST creates FocusSession on behalf of employee with streak computation (yesterday→+1, else→1), updates totalFocusHours/totalPoints/totalSessions/streak/bestStreak/lastFocusDate, triggers refreshEmployeeStats+refreshTeamStats+refreshCompanyStats async, runs checkAchievements, audit-logs MOBILE_PREVIEW_VIEW + MOBILE_PREVIEW_SESSION
+  - src/components/focuspot/shared/app-shell.tsx — added "Preview Mobile App" button (Smartphone icon, emerald outline variant) to header for SUPER_ADMIN + COMPANY_ADMIN only; also added dropdown-menu item; calls useAuthStore.getState().setMobilePreview(true, null) which lets admin pick employee inside the phone frame
+- Lint fix in mobile-app.tsx: removed synchronous setLoading(true) call inside the mount effect (was triggering react-hooks/set-state-in-effect rule). Initial loading state comes from useState(true); silent refreshes (handleRefresh after session POST) skip setLoading entirely; non-silent setLoading(false) is deferred to .finally() callback (async, doesn't trigger rule). Behavior preserved — skeleton shows on first mount, no flash on refresh, retry-on-error still works.
+
+Stage Summary:
+- Phone-frame simulator fully functional: admins click "Preview Mobile App" in header → routed to <MobileAppPreview /> (mobilePreview=true in useAuthStore) → dark gradient background with realistic iPhone frame (notch, status bar, home indicator, side buttons) + "Admin Testing Tool" banner + Exit button + side info panel
+- Employee picker: searchable scrollable list of up to 50 employees (avatar, name, title, team badge w/ color dot, streak 🔥, hours + sessions); clicking one calls setMobilePreview(true, employeeId) and swaps to MobileApp
+- MobileApp: 4-tab native-feel UI (Timer/Ranks/Rewards/Profile) with framer-motion slide transitions + layoutId tab indicator, no top header (phone frame provides chrome), bottom tab bar fixed at bottom of phone, hidden scrollbars via mobile-scroll class, all touch targets ≥44px
+- Timer tab reuses production anti-cheat Page Visibility logic (pause on tab-hidden + interruptions counter + rose "Stay focused!" banner + toast); on completion POSTs to preview API and shows PlantAnimation + flame streak animation; silent refresh re-fetches full payload so other tabs reflect the new session
+- Leaderboard tab: emerald-gradient personal rank banner, My Team/Company toggle, team leaderboard with ranked bars + medals + progress bars + my-team highlight, personal leaderboard with crown for #1 + avatar + progress + streak
+- Rewards tab: SVG circular progress (fulfilled/total %), 3 summary mini-stats, unlocked-achievements grid, redemption history cards with tier+status badges and copy-ready gift-card code boxes
+- Profile tab: avatar + name + title + team/company badges, 4-stat grid (Hours/Sessions/Streak/Best), points summary, achievements grid, last-completed-challenge result (winner/runner-up), notification preferences row, exit preview button, version footer
+- Preview API: GET returns the same shape as /api/employee/me but enriched for the simulator (full leaderboard with my-team filter, achievements with progress %, rewards with codes); POST creates a real FocusSession on behalf of the employee with full streak/stats/achievements side-effects; COMPANY_ADMIN cannot preview employees outside their company (403); SUPER_ADMIN can preview anyone; both actions audit-logged
+- Design: NO blue/indigo — emerald primary, accents amber/rose/sky/violet/orange; phone frame ~375×812 with rounded-[3rem]; cards p-3/p-4; gaps gap-2/gap-3; status bar shows live time (updates every 30s); native-feel slide transitions
+- Verification: bun run lint → 0 errors, 0 warnings; npx tsc --noEmit → 0 errors in src/; dev server compiles cleanly; end-to-end browser test (login as Super Admin → Preview Mobile App → pick Alex Chen → all 4 tabs render correctly with real data); POST /api/admin/mobile-preview/{id} verified to insert FocusSession, update User stats, refresh TeamStatistics/CompanyStatistics/EmployeeStatistics, and audit-log the action
+
+---
+Task ID: AA1
+Agent: Main (orchestrator)
+Task: Enforce strict access architecture — Web app = admins only, Mobile app = employees only
+
+Work Log:
+- Updated `/api/auth/login` to DENY employee web login (server-side): returns 403 with `EMPLOYEE_WEB_ACCESS_DENIED` if user.role === 'EMPLOYEE'. Records login attempt + audit log.
+- Updated `/api/auth/me` to clear session and deny access if an employee somehow has a valid cookie (safety net).
+- Updated `src/lib/store.ts` with `mobilePreview` + `previewEmployeeId` state + `setMobilePreview()` action.
+- Updated `page.tsx`: routes to admin dashboards only; employees get access-denied screen; `mobilePreview` state shows the MobileAppPreview.
+- Updated `login-screen.tsx`: removed Employee quick-login card (only Super Admin + Company Admin cards remain); added "Are you an employee?" mobile app download notice (emerald banner); enhanced error handling for EMPLOYEE_WEB_ACCESS_DENIED.
+- Created `/api/admin/mobile-preview` (GET) — lists employees admins can preview (company-scoped for COMPANY_ADMIN, all for SUPER_ADMIN).
+- Subagent MA1 built:
+  - `src/components/focuspot/mobile/app-preview.tsx` — phone frame (iPhone-style, rounded-[3rem], notch, status bar, home indicator), employee picker, exit button, admin testing tool banner
+  - `src/components/focuspot/mobile/mobile-app.tsx` — 4-tab mobile app (Timer/Ranks/Rewards/Profile) with bottom tab bar, anti-cheat timer, leaderboard, rewards, profile
+  - `src/app/api/admin/mobile-preview/[employeeId]/route.ts` — GET returns all employee data; POST creates real FocusSession on behalf of employee
+  - Added "Preview Mobile App" button (Smartphone icon) to AppShell header for admins only
+- Verified end-to-end:
+  1. Employee login → 403 EMPLOYEE_WEB_ACCESS_DENIED ✅
+  2. Admin login → 200 ✅
+  3. Login screen has no employee card, has mobile notice ✅
+  4. Mobile Preview button present for admins ✅
+  5. Phone frame + employee picker renders ✅
+  6. Mobile app renders with timer, streak, tabs, recent sessions ✅
+  7. No console errors ✅
+- Lint clean, TypeScript clean
+
+Stage Summary:
+- **Architecture enforced**: Web app (Super Admin + Company Admin only) vs Mobile app (Employees only)
+- **Server-side enforcement**: Employee login returns 403 at the API level; `/api/auth/me` clears employee sessions
+- **Mobile App Preview**: Admins can preview the employee mobile experience via a phone-frame simulator (testing/impersonation tool explicitly allowed by spec)
+- **Login screen**: Only admin quick-login cards; employee mobile app download notice
+- The mobile preview creates REAL FocusSessions in the database on behalf of the selected employee — not a mock

@@ -14,6 +14,7 @@ import {
   User,
   Crown,
   Check,
+  Smartphone,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -89,7 +90,14 @@ export function LoginScreen() {
         body: JSON.stringify({ email: loginEmail, password: loginPassword }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Login failed')
+      if (!res.ok) {
+        if (data.error === 'EMPLOYEE_WEB_ACCESS_DENIED') {
+          toast.error('Employees must use the FocusPot mobile app (Android & iOS).', { duration: 6000 })
+        } else {
+          throw new Error(data.error || data.message || 'Login failed')
+        }
+        return
+      }
       setUser(data)
       toast.success(`Welcome back, ${data.name.split(' ')[0]}!`)
     } catch (e: any) {
@@ -119,13 +127,6 @@ export function LoginScreen() {
       label: 'Company Admin',
       desc: 'HR Manager. Set challenges, manage teams, view anonymous analytics.',
       color: 'amber',
-    },
-    {
-      account: demos.employee,
-      icon: User,
-      label: 'Employee',
-      desc: 'Track deep work, climb leaderboards, keep your streak alive.',
-      color: 'emerald',
     },
   ]
 
@@ -215,8 +216,8 @@ export function LoginScreen() {
                       Pick a role below to explore the demo instantly.
                     </p>
 
-                    {/* Quick login role cards */}
-                    <div className="space-y-2.5 mb-6">
+                    {/* Quick login role cards — Super Admin & Company Admin only */}
+                    <div className="space-y-2.5 mb-5">
                       {roleCards.map((rc) => {
                         const c = getColor(rc.color)
                         return (
@@ -244,6 +245,19 @@ export function LoginScreen() {
                           </button>
                         )
                       })}
+                    </div>
+
+                    {/* Employee mobile app notice */}
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40 mb-5">
+                      <div className="w-9 h-9 rounded-lg bg-emerald-500 flex items-center justify-center shrink-0">
+                        <Smartphone className="w-4 h-4 text-white" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-emerald-800 dark:text-emerald-200">Are you an employee?</p>
+                        <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                          Download the FocusPot mobile app (Android & iOS). The web portal is for administrators only.
+                        </p>
+                      </div>
                     </div>
 
                     <div className="relative my-5">

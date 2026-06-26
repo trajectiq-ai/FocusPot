@@ -1,0 +1,1708 @@
+     1→'use client'
+     2→
+     3→import { useCallback, useEffect, useRef, useState } from 'react'
+     4→import { motion, AnimatePresence } from 'framer-motion'
+     5→import {
+     6→  Timer as TimerIcon,
+     7→  Trophy,
+     8→  Gift,
+     9→  User as UserIcon,
+    10→  Play,
+    11→  RotateCcw,
+    12→  AlertTriangle,
+    13→  Flame,
+    14→  Clock,
+    15→  Target,
+    16→  Crown,
+    17→  Medal,
+    18→  Users,
+    19→  Lock,
+    20→  Sparkles,
+    21→  PartyPopper,
+    22→  Frown,
+    23→  Bell,
+    24→  ChevronRight,
+    25→  Award,
+    26→  Calendar,
+    27→  Check,
+    28→} from 'lucide-react'
+    29→import { Button } from '@/components/ui/button'
+    30→import { Card } from '@/components/ui/card'
+    31→import { Badge } from '@/components/ui/badge'
+    32→import { Progress } from '@/components/ui/progress'
+    33→import { Skeleton } from '@/components/ui/skeleton'
+    34→import { getColor, getInitials } from '@/lib/colors'
+    35→import { cn } from '@/lib/utils'
+    36→import { toast } from 'sonner'
+    37→import { PlantAnimation } from '@/components/focuspot/employee/plant-animation'
+    38→
+    39→// ============================================================
+    40→// Types — mirror the shape returned by GET /api/admin/mobile-preview/[id]
+    41→// ============================================================
+    42→
+    43→type MobileUser = {
+    44→  id: string
+    45→  name: string
+    46→  email: string
+    47→  title: string
+    48→  avatarColor: string
+    49→  streak: number
+    50→  bestStreak: number
+    51→  totalFocusHours: number
+    52→  totalPoints: number
+    53→  totalSessions: number
+    54→  lastFocusDate: string | null
+    55→}
+    56→
+    57→type Company = { id: string; name: string; domain: string }
+    58→type Team = { id: string; name: string; color: string }
+    59→
+    60→type ActiveChallenge = {
+    61→  id: string
+    62→  name: string
+    63→  description: string
+    64→  startDate: string
+    65→  endDate: string
+    66→  prize: string
+    67→  giftCardValue: number
+    68→  status: string
+    69→} | null
+    70→
+    71→type LastCompleted = {
+    72→  id: string
+    73→  name: string
+    74→  prize: string
+    75→  giftCardValue: number
+    76→  winnerTeam: { id: string; name: string; color: string } | null
+    77→  isWinner: boolean
+    78→  giftCardCode: string
+    79→} | null
+    80→
+    81→type SessionEntry = {
+    82→  id: string
+    83→  startTime: string
+    84→  durationMinutes: number
+    85→  points: number
+    86→}
+    87→
+    88→type PersonEntry = {
+    89→  userId: string
+    90→  name: string
+    91→  avatarColor: string
+    92→  hours: number
+    93→  points: number
+    94→  streak: number
+    95→  isMe: boolean
+    96→  isTeammate: boolean
+    97→}
+    98→
+    99→type TeamEntry = {
+   100→  teamId: string
+   101→  teamName: string
+   102→  teamColor: string
+   103→  totalHours: number
+   104→  totalPoints: number
+   105→  sessionCount: number
+   106→  avgHoursPerMember: number
+   107→  memberCount: number
+   108→  isMyTeam: boolean
+   109→}
+   110→
+   111→type LeaderboardData = {
+   112→  teamLeaderboard: TeamEntry[]
+   113→  myTeamRank: number
+   114→  personalRank: number | null
+   115→  myStats: { hours: number; points: number; streak: number; isMe: boolean }
+   116→  totalParticipants: number
+   117→  topOverall: PersonEntry[]
+   118→  myTeamLeaderboard: PersonEntry[]
+   119→}
+   120→
+   121→type Achievement = {
+   122→  id: string
+   123→  key: string
+   124→  name: string
+   125→  description: string
+   126→  icon: string
+   127→  category: string
+   128→  threshold: number
+   129→  metric: string
+   130→  color: string
+   131→  unlocked: boolean
+   132→  unlockedAt: string | null
+   133→  progress: number
+   134→  currentValue: number
+   135→}
+   136→
+   137→type RewardsSummary = {
+   138→  total: number
+   139→  pending: number
+   140→  approved: number
+   141→  fulfilled: number
+   142→  declined: number
+   143→  totalValue: number
+   144→}
+   145→
+   146→type Redemption = {
+   147→  id: string
+   148→  rewardId: string
+   149→  tier: string
+   150→  position: number
+   151→  status: string
+   152→  code: string
+   153→  notes: string
+   154→  redeemedAt: string
+   155→  fulfilledAt: string | null
+   156→  expiresAt: string | null
+   157→  reward: {
+   158→    id: string
+   159→    name: string
+   160→    description: string
+   161→    type: string
+   162→    value: number
+   163→    provider: string
+   164→    imageColor: string
+   165→  }
+   166→}
+   167→
+   168→type MobileData = {
+   169→  user: MobileUser
+   170→  company: Company | null
+   171→  team: Team | null
+   172→  activeChallenge: ActiveChallenge
+   173→  lastCompleted: LastCompleted
+   174→  recentSessions: SessionEntry[]
+   175→  todaySessionCount: number
+   176→  todayFocusMinutes: number
+   177→  leaderboard: LeaderboardData
+   178→  achievements: {
+   179→    summary: { total: number; unlocked: number; progress: number }
+   180→    byCategory: Record<string, Achievement[]>
+   181→    achievements: Achievement[]
+   182→  }
+   183→  rewards: {
+   184→    summary: RewardsSummary
+   185→    redemptions: Redemption[]
+   186→  }
+   187→}
+   188→
+   189→// ============================================================
+   190→// Helpers
+   191→// ============================================================
+   192→
+   193→const DURATIONS = [
+   194→  { minutes: 30, points: 5 },
+   195→  { minutes: 60, points: 10 },
+   196→] as const
+   197→
+   198→const RANK_TINT = ['text-amber-500', 'text-zinc-400', 'text-orange-600']
+   199→
+   200→const TIER_META: Record<string, { label: string; tint: string }> = {
+   201→  WINNER: {
+   202→    label: 'Winner',
+   203→    tint: 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border-amber-200/60',
+   204→  },
+   205→  RUNNER_UP: {
+   206→    label: 'Runner-up',
+   207→    tint: 'bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300 border-violet-200/60',
+   208→  },
+   209→  PARTICIPATION: {
+   210→    label: 'Participation',
+   211→    tint: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border-emerald-200/60',
+   212→  },
+   213→}
+   214→
+   215→const STATUS_META: Record<string, { label: string; dot: string; tint: string }> = {
+   216→  PENDING: {
+   217→    label: 'Pending',
+   218→    dot: 'bg-amber-500',
+   219→    tint: 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border-amber-200/60',
+   220→  },
+   221→  APPROVED: {
+   222→    label: 'Approved',
+   223→    dot: 'bg-sky-500',
+   224→    tint: 'bg-sky-100 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300 border-sky-200/60',
+   225→  },
+   226→  FULFILLED: {
+   227→    label: 'Fulfilled',
+   228→    dot: 'bg-emerald-500',
+   229→    tint: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border-emerald-200/60',
+   230→  },
+   231→  DECLINED: {
+   232→    label: 'Declined',
+   233→    dot: 'bg-rose-500',
+   234→    tint: 'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border-rose-200/60',
+   235→  },
+   236→  EXPIRED: {
+   237→    label: 'Expired',
+   238→    dot: 'bg-zinc-400',
+   239→    tint: 'bg-muted text-muted-foreground border-border',
+   240→  },
+   241→}
+   242→
+   243→const CATEGORY_LABEL: Record<string, string> = {
+   244→  FOCUS: 'Focus',
+   245→  STREAK: 'Streaks',
+   246→  SOCIAL: 'Social',
+   247→  MILESTONE: 'Milestones',
+   248→}
+   249→
+   250→function formatHM(mins: number) {
+   251→  const h = Math.floor(mins / 60)
+   252→  const m = mins % 60
+   253→  if (h === 0) return `${m}m`
+   254→  return m === 0 ? `${h}h` : `${h}h ${m}m`
+   255→}
+   256→
+   257→function formatDate(iso: string | null): string {
+   258→  if (!iso) return ''
+   259→  try {
+   260→    return new Date(iso).toLocaleDateString('en-US', {
+   261→      month: 'short',
+   262→      day: 'numeric',
+   263→    })
+   264→  } catch {
+   265→    return ''
+   266→  }
+   267→}
+   268→
+   269→function metricLabel(metric: string): string {
+   270→  switch (metric) {
+   271→    case 'totalSessions':
+   272→      return 'sessions'
+   273→    case 'totalFocusHours':
+   274→      return 'hours'
+   275→    case 'bestStreak':
+   276→    case 'streak':
+   277→      return 'days'
+   278→    default:
+   279→      return metric
+   280→  }
+   281→}
+   282→
+   283→function formatValue(metric: string, value: number): string {
+   284→  if (metric === 'totalFocusHours') return value.toFixed(1)
+   285→  return String(Math.round(value))
+   286→}
+   287→
+   288→// ============================================================
+   289→// Main component
+   290→// ============================================================
+   291→
+   292→type TabKey = 'timer' | 'leaderboard' | 'rewards' | 'profile'
+   293→
+   294→export function MobileApp({
+   295→  employeeId,
+   296→  onExit,
+   297→}: {
+   298→  employeeId: string
+   299→  onExit?: () => void
+   300→}) {
+   301→  const [tab, setTab] = useState<TabKey>('timer')
+   302→  const [data, setData] = useState<MobileData | null>(null)
+   303→  const [loading, setLoading] = useState(true)
+   304→  const [error, setError] = useState<string | null>(null)
+   305→
+   306→  // Fetch everything via the admin preview API.
+   307→  // `fetchData` is invoked from the mount effect AND from `handleRefresh`.
+   308→  // We do NOT call setLoading(true) synchronously in the effect body — the
+   309→  // initial load uses useState(true), and refreshes keep the existing data
+   310→  // visible until the new data arrives (no flash of loading state).
+   311→  const fetchData = useCallback(
+   312→    (opts?: { silent?: boolean }) => {
+   313→      let cancelled = false
+   314→      if (!opts?.silent) setLoading(true)
+   315→      fetch(`/api/admin/mobile-preview/${employeeId}`, { cache: 'no-store' })
+   316→        .then(async (r) => {
+   317→          if (!r.ok) throw new Error('Failed to load preview data')
+   318→          return r.json() as Promise<MobileData>
+   319→        })
+   320→        .then((d) => {
+   321→          if (!cancelled) {
+   322→            setData(d)
+   323→            setError(null)
+   324→          }
+   325→        })
+   326→        .catch((e) => {
+   327→          if (!cancelled) setError(e instanceof Error ? e.message : 'Load failed')
+   328→        })
+   329→        .finally(() => {
+   330→          if (!cancelled) setLoading(false)
+   331→        })
+   332→      return () => {
+   333→        cancelled = true
+   334→      }
+   335→    },
+   336→    [employeeId]
+   337→  )
+   338→
+   339→  useEffect(() => {
+   340→    const cleanup = fetchData()
+   341→    return cleanup
+   342→  }, [fetchData])
+   343→
+   344→  const handleRefresh = useCallback(() => {
+   345→    fetchData({ silent: true })
+   346→  }, [fetchData])
+   347→
+   348→  if (loading && !data) {
+   349→    return <MobileLoading />
+   350→  }
+   351→  if (error || !data) {
+   352→    return (
+   353→      <div className="h-full flex flex-col items-center justify-center p-6 text-center bg-background">
+   354→        <div className="text-4xl mb-2">🍃</div>
+   355→        <p className="text-sm font-semibold">Could not load preview</p>
+   356→        <p className="text-xs text-muted-foreground mt-1 mb-3">{error}</p>
+   357→        <Button size="sm" onClick={handleRefresh}>
+   358→          Retry
+   359→        </Button>
+   360→      </div>
+   361→    )
+   362→  }
+   363→
+   364→  return (
+   365→    <div className="h-full flex flex-col bg-background overflow-hidden">
+   366→      {/* Scrollable content area */}
+   367→      <div className="flex-1 overflow-y-auto mobile-scroll pb-2">
+   368→        <AnimatePresence mode="wait">
+   369→          <motion.div
+   370→            key={tab}
+   371→            initial={{ opacity: 0, x: 16 }}
+   372→            animate={{ opacity: 1, x: 0 }}
+   373→            exit={{ opacity: 0, x: -16 }}
+   374→            transition={{ duration: 0.2, ease: 'easeOut' }}
+   375→            className="px-3 pt-3"
+   376→          >
+   377→            {tab === 'timer' && (
+   378→              <TimerTab data={data} employeeId={employeeId} onRefresh={handleRefresh} />
+   379→            )}
+   380→            {tab === 'leaderboard' && <LeaderboardTab data={data} />}
+   381→            {tab === 'rewards' && <RewardsTab data={data} />}
+   382→            {tab === 'profile' && <ProfileTab data={data} onExit={onExit} />}
+   383→          </motion.div>
+   384→        </AnimatePresence>
+   385→      </div>
+   386→
+   387→      {/* Bottom tab bar */}
+   388→      <BottomTabBar tab={tab} setTab={setTab} />
+   389→    </div>
+   390→  )
+   391→}
+   392→
+   393→// ============================================================
+   394→// Loading state
+   395→// ============================================================
+   396→
+   397→function MobileLoading() {
+   398→  return (
+   399→    <div className="h-full bg-background p-4 space-y-4">
+   400→      <Skeleton className="h-20 w-full rounded-2xl" />
+   401→      <Skeleton className="h-64 w-full rounded-3xl" />
+   402→      <Skeleton className="h-12 w-3/4 rounded-xl" />
+   403→      <Skeleton className="h-12 w-2/3 rounded-xl" />
+   404→    </div>
+   405→  )
+   406→}
+   407→
+   408→// ============================================================
+   409→// Timer tab — mobile-optimized circular focus timer
+   410→// ============================================================
+   411→
+   412→function TimerTab({
+   413→  data,
+   414→  employeeId,
+   415→  onRefresh,
+   416→}: {
+   417→  data: MobileData
+   418→  employeeId: string
+   419→  onRefresh: () => void
+   420→}) {
+   421→  const [durationIdx, setDurationIdx] = useState(1)
+   422→  const duration = DURATIONS[durationIdx].minutes
+   423→  const points = DURATIONS[durationIdx].points
+   424→
+   425→  const [secondsLeft, setSecondsLeft] = useState(duration * 60)
+   426→  const [isRunning, setIsRunning] = useState(false)
+   427→  const [isPaused, setIsPaused] = useState(false)
+   428→  const [interruptions, setInterruptions] = useState(0)
+   429→  const [showPlant, setShowPlant] = useState(false)
+   430→  const [showFlame, setShowFlame] = useState(false)
+   431→  const [isCompleting, setIsCompleting] = useState(false)
+   432→
+   433→  // Keep a live copy of the user's stats so completion reflects updated values
+   434→  const [liveStats, setLiveStats] = useState({
+   435→    streak: data.user.streak,
+   436→    bestStreak: data.user.bestStreak,
+   437→    totalFocusHours: data.user.totalFocusHours,
+   438→    totalPoints: data.user.totalPoints,
+   439→    todayFocusMinutes: data.todayFocusMinutes,
+   440→  })
+   441→
+   442→  // Sync from props when data changes
+   443→  useEffect(() => {
+   444→    setLiveStats({
+   445→      streak: data.user.streak,
+   446→      bestStreak: data.user.bestStreak,
+   447→      totalFocusHours: data.user.totalFocusHours,
+   448→      totalPoints: data.user.totalPoints,
+   449→      todayFocusMinutes: data.todayFocusMinutes,
+   450→    })
+   451→  }, [data])
+   452→
+   453→  const totalSeconds = duration * 60
+   454→
+   455→  // Reset seconds when duration changes (and not running)
+   456→  useEffect(() => {
+   457→    if (!isRunning) setSecondsLeft(duration * 60)
+   458→  }, [duration, isRunning])
+   459→
+   460→  // Tick
+   461→  useEffect(() => {
+   462→    if (!isRunning || isPaused) return
+   463→    const id = setInterval(() => {
+   464→      setSecondsLeft((s) => Math.max(0, s - 1))
+   465→    }, 1000)
+   466→    return () => clearInterval(id)
+   467→  }, [isRunning, isPaused])
+   468→
+   469→  // Anti-cheat — pause when tab/window loses focus
+   470→  useEffect(() => {
+   471→    const handleVisibility = () => {
+   472→      if (!isRunning) return
+   473→      if (document.hidden) {
+   474→        if (!isPaused) {
+   475→          setIsPaused(true)
+   476→          setInterruptions((c) => c + 1)
+   477→          toast.error('Stay focused! Timer paused.', { duration: 3000 })
+   478→        }
+   479→      } else if (isPaused) {
+   480→        setIsPaused(false)
+   481→        toast.success('Welcome back! Timer resumed.', { duration: 2000 })
+   482→      }
+   483→    }
+   484→    document.addEventListener('visibilitychange', handleVisibility)
+   485→    return () => document.removeEventListener('visibilitychange', handleVisibility)
+   486→  }, [isRunning, isPaused])
+   487→
+   488→  const completionRef = useRef<() => void>(() => {})
+   489→  completionRef.current = async () => {
+   490→    if (isCompleting) return
+   491→    setIsCompleting(true)
+   492→    setIsRunning(false)
+   493→    try {
+   494→      const res = await fetch(
+   495→        `/api/admin/mobile-preview/${employeeId}`,
+   496→        {
+   497→          method: 'POST',
+   498→          headers: { 'Content-Type': 'application/json' },
+   499→          body: JSON.stringify({
+   500→            durationMinutes: duration,
+   501→            points,
+   502→            challengeId: data.activeChallenge?.id || null,
+   503→          }),
+   504→        }
+   505→      )
+   506→      if (!res.ok) throw new Error('Failed')
+   507→      const json = (await res.json()) as {
+   508→        updatedStats: {
+   509→          streak: number
+   510→          bestStreak: number
+   511→          totalFocusHours: number
+   512→          totalPoints: number
+   513→          streakIncreased: boolean
+   514→        }
+   515→        newAchievements: Array<{
+   516→          id: string
+   517→          key: string
+   518→          name: string
+   519→          description: string
+   520→          icon: string
+   521→          color: string
+   522→        }>
+   523→      }
+   524→      setShowPlant(true)
+   525→      window.setTimeout(() => setShowPlant(false), 4500)
+   526→      toast.success(`+${points} points! Great deep work 🌱`, { duration: 4000 })
+   527→
+   528→      if (json.updatedStats.streakIncreased && json.updatedStats.streak >= 2) {
+   529→        setShowFlame(true)
+   530→        window.setTimeout(() => setShowFlame(false), 4000)
+   531→        toast(`🔥 Streak extended to ${json.updatedStats.streak} days!`, {
+   532→          duration: 4000,
+   533→        })
+   534→      }
+   535→
+   536→      json.newAchievements.forEach((a) => {
+   537→        toast(`🏆 ${a.name} unlocked!`, { duration: 4000 })
+   538→      })
+   539→
+   540→      setLiveStats((s) => ({
+   541→        ...s,
+   542→        streak: json.updatedStats.streak,
+   543→        bestStreak: json.updatedStats.bestStreak,
+   544→        totalFocusHours: json.updatedStats.totalFocusHours,
+   545→        totalPoints: json.updatedStats.totalPoints,
+   546→        todayFocusMinutes: s.todayFocusMinutes + duration,
+   547→      }))
+   548→
+   549→      // Refresh the underlying data so the leaderboard/rewards/profile tabs update
+   550→      onRefresh()
+   551→    } catch {
+   552→      toast.error('Could not save your session. Please try again.')
+   553→    } finally {
+   554→      setIsCompleting(false)
+   555→      setSecondsLeft(duration * 60)
+   556→    }
+   557→  }
+   558→
+   559→  useEffect(() => {
+   560→    if (isRunning && secondsLeft === 0 && !isCompleting) {
+   561→      completionRef.current()
+   562→    }
+   563→  }, [secondsLeft, isRunning, isCompleting])
+   564→
+   565→  const handleStart = useCallback(() => {
+   566→    setSecondsLeft(duration * 60)
+   567→    setIsRunning(true)
+   568→    setIsPaused(false)
+   569→    setInterruptions(0)
+   570→    toast.success('Deep work started! Stay focused 🌱', { duration: 2500 })
+   571→  }, [duration])
+   572→
+   573→  const handleEndEarly = useCallback(() => {
+   574→    setIsRunning(false)
+   575→    setIsPaused(false)
+   576→    setSecondsLeft(duration * 60)
+   577→    toast('Session ended early — no points awarded.', { duration: 3000 })
+   578→  }, [duration])
+   579→
+   580→  const mm = Math.floor(secondsLeft / 60)
+   581→    .toString()
+   582→    .padStart(2, '0')
+   583→  const ss = (secondsLeft % 60).toString().padStart(2, '0')
+   584→  const progress = (totalSeconds - secondsLeft) / totalSeconds
+   585→
+   586→  // Mobile-sized circle (~ 220px)
+   587→  const R = 96
+   588→  const CIRC = 2 * Math.PI * R
+   589→  const offset = CIRC * (1 - progress)
+   590→
+   591→  const isActive = isRunning && !isPaused
+   592→
+   593→  return (
+   594→    <div className="space-y-3">
+   595→      {/* Top greeting / streak row */}
+   596→      <div className="flex items-center justify-between gap-2">
+   597→        <div>
+   598→          <div className="text-[11px] text-muted-foreground">Hi, {data.user.name.split(' ')[0]}</div>
+   599→          <div className="font-bold text-lg leading-tight">Focus Time</div>
+   600→        </div>
+   601→        <div className="flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 px-2.5 py-1.5 rounded-full">
+   602→          {liveStats.streak >= 2 ? (
+   603→            <span className="text-base flame" aria-label="streak">🔥</span>
+   604→          ) : (
+   605→            <Flame className="w-4 h-4" />
+   606→          )}
+   607→          <span className="text-xs font-bold tabular-nums">{liveStats.streak}d</span>
+   608→        </div>
+   609→      </div>
+   610→
+   611→      {/* Mini stats row */}
+   612→      <div className="grid grid-cols-3 gap-2">
+   613→        <MiniStat
+   614→          icon={<Clock className="w-3.5 h-3.5" />}
+   615→          tint="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+   616→          label="Today"
+   617→          value={formatHM(liveStats.todayFocusMinutes)}
+   618→        />
+   619→        <MiniStat
+   620→          icon={<Target className="w-3.5 h-3.5" />}
+   621→          tint="bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300"
+   622→          label="Total"
+   623→          value={`${liveStats.totalFocusHours}h`}
+   624→        />
+   625→        <MiniStat
+   626→          icon={<Sparkles className="w-3.5 h-3.5" />}
+   627→          tint="bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
+   628→          label="Points"
+   629→          value={`${liveStats.totalPoints}`}
+   630→        />
+   631→      </div>
+   632→
+   633→      {/* Active challenge banner */}
+   634→      {data.activeChallenge && (
+   635→        <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white p-3 shadow-md shadow-emerald-500/20">
+   636→          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider opacity-80 mb-0.5">
+   637→            <Trophy className="w-3 h-3" />
+   638→            Active Challenge
+   639→          </div>
+   640→          <div className="font-bold text-sm leading-tight">{data.activeChallenge.name}</div>
+   641→          <div className="text-[11px] opacity-90 mt-0.5 line-clamp-1">
+   642→            🎁 {data.activeChallenge.prize}
+   643→          </div>
+   644→        </div>
+   645→      )}
+   646→
+   647→      {/* Timer card */}
+   648→      <Card className="p-4 relative overflow-hidden">
+   649→        {data.activeChallenge && (
+   650→          <Badge className="absolute top-2.5 right-2.5 bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400 hover:bg-amber-200 text-[10px] h-5">
+   651→            🏆 Challenge
+   652→          </Badge>
+   653→        )}
+   654→
+   655→        <div className="flex flex-col items-center pt-1">
+   656→          {/* Duration picker */}
+   657→          {!isRunning && (
+   658→            <motion.div
+   659→              initial={{ opacity: 0, y: -4 }}
+   660→              animate={{ opacity: 1, y: 0 }}
+   661→              className="flex gap-1.5 mb-4"
+   662→              role="radiogroup"
+   663→              aria-label="Select focus duration"
+   664→            >
+   665→              {DURATIONS.map((d, i) => (
+   666→                <button
+   667→                  key={d.minutes}
+   668→                  onClick={() => setDurationIdx(i)}
+   669→                  role="radio"
+   670→                  aria-checked={durationIdx === i}
+   671→                  className={cn(
+   672→                    'px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
+   673→                    durationIdx === i
+   674→                      ? 'bg-emerald-600 text-white shadow-sm'
+   675→                      : 'bg-muted text-muted-foreground hover:bg-muted/70'
+   676→                  )}
+   677→                >
+   678→                  {d.minutes}m · +{d.points}
+   679→                </button>
+   680→              ))}
+   681→            </motion.div>
+   682→          )}
+   683→
+   684→          {/* Timer circle */}
+   685→          <div className={cn('relative rounded-full', isActive && 'timer-active')}>
+   686→            <svg
+   687→              width="220"
+   688→              height="220"
+   689→              viewBox="0 0 220 220"
+   690→              className="transform -rotate-90 max-w-full h-auto"
+   691→              aria-hidden="true"
+   692→            >
+   693→              <circle
+   694→                cx="110"
+   695→                cy="110"
+   696→                r={R}
+   697→                fill="none"
+   698→                stroke="currentColor"
+   699→                strokeWidth="10"
+   700→                className="text-muted/30"
+   701→              />
+   702→              <motion.circle
+   703→                cx="110"
+   704→                cy="110"
+   705→                r={R}
+   706→                fill="none"
+   707→                stroke="url(#mobileTimerGradient)"
+   708→                strokeWidth="10"
+   709→                strokeLinecap="round"
+   710→                strokeDasharray={CIRC}
+   711→                initial={false}
+   712→                animate={{ strokeDashoffset: offset }}
+   713→                transition={{ ease: 'linear', duration: 0.4 }}
+   714→              />
+   715→              <defs>
+   716→                <linearGradient id="mobileTimerGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+   717→                  <stop offset="0%" stopColor="oklch(0.55 0.14 155)" />
+   718→                  <stop offset="100%" stopColor="oklch(0.6 0.16 170)" />
+   719→                </linearGradient>
+   720→              </defs>
+   721→            </svg>
+   722→
+   723→            <div className="absolute inset-0 flex flex-col items-center justify-center">
+   724→              <AnimatePresence mode="wait">
+   725→                {showPlant ? (
+   726→                  <motion.div
+   727→                    key="plant"
+   728→                    initial={{ opacity: 0, scale: 0.6 }}
+   729→                    animate={{ opacity: 1, scale: 1 }}
+   730→                    exit={{ opacity: 0, scale: 0.6 }}
+   731→                  >
+   732→                    <PlantAnimation />
+   733→                  </motion.div>
+   734→                ) : showFlame ? (
+   735→                  <motion.div
+   736→                    key="flame"
+   737→                    initial={{ opacity: 0, scale: 0.5 }}
+   738→                    animate={{ opacity: 1, scale: 1 }}
+   739→                    exit={{ opacity: 0, scale: 0.5 }}
+   740→                    className="text-center"
+   741→                  >
+   742→                    <div className="text-5xl flame">🔥</div>
+   743→                    <div className="text-[11px] font-semibold text-amber-600 mt-1">
+   744→                      Streak extended!
+   745→                    </div>
+   746→                  </motion.div>
+   747→                ) : (
+   748→                  <motion.div
+   749→                    key="time"
+   750→                    initial={{ opacity: 0 }}
+   751→                    animate={{ opacity: 1 }}
+   752→                    exit={{ opacity: 0 }}
+   753→                    className="text-center"
+   754→                  >
+   755→                    <div className="text-5xl font-bold tabular-nums tracking-tight">
+   756→                      {mm}:{ss}
+   757→                    </div>
+   758→                    <div className="text-[11px] text-muted-foreground mt-1 h-4">
+   759→                      {isPaused ? (
+   760→                        <span className="text-rose-600 font-medium inline-flex items-center gap-1">
+   761→                          <AlertTriangle className="w-3 h-3" /> Paused
+   762→                        </span>
+   763→                      ) : isRunning ? (
+   764→                        <span className="text-emerald-600 font-medium">
+   765→                          Deep work in progress
+   766→                        </span>
+   767→                      ) : (
+   768→                        <span>Ready to focus</span>
+   769→                      )}
+   770→                    </div>
+   771→                  </motion.div>
+   772→                )}
+   773→              </AnimatePresence>
+   774→            </div>
+   775→          </div>
+   776→
+   777→          {/* Paused banner */}
+   778→          <AnimatePresence>
+   779→            {isPaused && (
+   780→              <motion.div
+   781→                initial={{ opacity: 0, y: 6, height: 0 }}
+   782→                animate={{ opacity: 1, y: 0, height: 'auto' }}
+   783→                exit={{ opacity: 0, y: 6, height: 0 }}
+   784→                className="mt-4 w-full"
+   785→              >
+   786→                <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-center">
+   787→                  <div className="flex items-center justify-center gap-1.5 font-semibold text-xs">
+   788→                    <AlertTriangle className="w-3.5 h-3.5" />
+   789→                    Stay focused!
+   790→                  </div>
+   791→                  <p className="text-[11px] mt-0.5">Tap back into the app to resume.</p>
+   792→                </div>
+   793→              </motion.div>
+   794→            )}
+   795→          </AnimatePresence>
+   796→
+   797→          {/* Controls */}
+   798→          <div className="mt-5 flex flex-col items-center gap-2 w-full">
+   799→            {!isRunning ? (
+   800→              <Button
+   801→                onClick={handleStart}
+   802→                disabled={isCompleting}
+   803→                className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 h-12 text-base rounded-2xl shadow-lg shadow-emerald-600/20 w-full max-w-[260px]"
+   804→              >
+   805→                <Play className="w-4 h-4 mr-1.5" fill="currentColor" />
+   806→                Start Deep Work
+   807→              </Button>
+   808→            ) : (
+   809→              <div className="flex items-center gap-3 w-full">
+   810→                <Button
+   811→                  variant="outline"
+   812→                  onClick={handleEndEarly}
+   813→                  className="h-11 px-4 rounded-2xl flex-1"
+   814→                >
+   815→                  <RotateCcw className="w-4 h-4 mr-1.5" />
+   816→                  End Early
+   817→                </Button>
+   818→                <div className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+   819→                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+   820→                  <span
+   821→                    className={cn(
+   822→                      'font-semibold',
+   823→                      interruptions > 0 ? 'text-rose-600' : 'text-foreground'
+   824→                    )}
+   825→                  >
+   826→                    {interruptions}
+   827→                  </span>
+   828→                </div>
+   829→              </div>
+   830→            )}
+   831→          </div>
+   832→
+   833→          {!isRunning && (
+   834→            <p className="mt-3 text-[10px] text-muted-foreground text-center max-w-[260px]">
+   835→              Switching tabs or minimizing the window will pause the timer. Only
+   836→              completed sessions count toward your streak.
+   837→            </p>
+   838→          )}
+   839→        </div>
+   840→      </Card>
+   841→
+   842→      {/* Recent sessions (last 3) */}
+   843→      {data.recentSessions.length > 0 && (
+   844→        <div>
+   845→          <div className="flex items-center justify-between mb-2">
+   846→            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+   847→              Recent Sessions
+   848→            </h3>
+   849→            <span className="text-[10px] text-muted-foreground">
+   850→              {data.recentSessions.length} recent
+   851→            </span>
+   852→          </div>
+   853→          <div className="space-y-1.5">
+   854→            {data.recentSessions.slice(0, 3).map((s) => (
+   855→              <div
+   856→                key={s.id}
+   857→                className="flex items-center gap-2.5 p-2.5 rounded-xl bg-muted/40"
+   858→              >
+   859→                <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950/50 flex items-center justify-center shrink-0">
+   860→                  <Clock className="w-3.5 h-3.5 text-emerald-600" />
+   861→                </div>
+   862→                <div className="min-w-0 flex-1">
+   863→                  <div className="text-xs font-medium">
+   864→                    {new Date(s.startTime).toLocaleTimeString('en-US', {
+   865→                      hour: 'numeric',
+   866→                      minute: '2-digit',
+   867→                    })}
+   868→                  </div>
+   869→                  <div className="text-[10px] text-muted-foreground">
+   870→                    {s.durationMinutes}m deep work
+   871→                  </div>
+   872→                </div>
+   873→                <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400 text-[10px] h-5">
+   874→                  +{s.points}
+   875→                </Badge>
+   876→              </div>
+   877→            ))}
+   878→          </div>
+   879→        </div>
+   880→      )}
+   881→    </div>
+   882→  )
+   883→}
+   884→
+   885→function MiniStat({
+   886→  icon,
+   887→  tint,
+   888→  label,
+   889→  value,
+   890→}: {
+   891→  icon: React.ReactNode
+   892→  tint: string
+   893→  label: string
+   894→  value: string
+   895→}) {
+   896→  return (
+   897→    <Card className="p-2.5">
+   898→      <div className="flex items-center gap-1.5 mb-1">
+   899→        <div className={cn('w-5 h-5 rounded-md flex items-center justify-center', tint)}>
+   900→          {icon}
+   901→        </div>
+   902→        <span className="text-[10px] text-muted-foreground">{label}</span>
+   903→      </div>
+   904→      <div className="text-sm font-bold tabular-nums">{value}</div>
+   905→    </Card>
+   906→  )
+   907→}
+   908→
+   909→// ============================================================
+   910→// Leaderboard tab
+   911→// ============================================================
+   912→
+   913→function LeaderboardTab({ data }: { data: MobileData }) {
+   914→  const { leaderboard } = data
+   915→  const [scope, setScope] = useState<'team' | 'company'>('team')
+   916→
+   917→  const maxTeamHours = Math.max(
+   918→    ...leaderboard.teamLeaderboard.map((t) => t.totalHours),
+   919→    1
+   920→  )
+   921→
+   922→  const personList =
+   923→    scope === 'team' ? leaderboard.myTeamLeaderboard : leaderboard.topOverall
+   924→  const maxPersonHours = Math.max(...personList.map((e) => e.hours), 1)
+   925→
+   926→  return (
+   927→    <div className="space-y-3">
+   928→      {/* Personal rank banner */}
+   929→      <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white p-4 relative overflow-hidden">
+   930→        <div className="absolute -top-8 -right-8 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
+   931→        <div className="relative">
+   932→          <div className="text-[11px] opacity-80">Your rank</div>
+   933→          <div className="text-3xl font-bold mt-0.5">
+   934→            {leaderboard.personalRank ? `#${leaderboard.personalRank}` : '—'}
+   935→            <span className="text-xs font-normal opacity-80 ml-1.5">
+   936→              of {leaderboard.totalParticipants}
+   937→            </span>
+   938→          </div>
+   939→          <div className="flex items-center gap-4 mt-3">
+   940→            <div>
+   941→              <div className="text-lg font-bold">{leaderboard.myStats.hours}h</div>
+   942→              <div className="text-[10px] opacity-80">focused</div>
+   943→            </div>
+   944→            <div>
+   945→              <div className="text-lg font-bold">{leaderboard.myStats.points}</div>
+   946→              <div className="text-[10px] opacity-80">points</div>
+   947→            </div>
+   948→            <div>
+   949→              <div className="text-lg font-bold">
+   950→                {leaderboard.myStats.streak}
+   951→                {leaderboard.myStats.streak >= 2 ? '🔥' : ''}
+   952→              </div>
+   953→              <div className="text-[10px] opacity-80">streak</div>
+   954→            </div>
+   955→          </div>
+   956→        </div>
+   957→      </div>
+   958→
+   959→      {/* Scope toggle */}
+   960→      <div className="grid grid-cols-2 gap-1 p-1 bg-muted rounded-xl">
+   961→        <button
+   962→          onClick={() => setScope('team')}
+   963→          className={cn(
+   964→            'py-1.5 rounded-lg text-xs font-medium transition-all flex items-center justify-center gap-1.5',
+   965→            scope === 'team'
+   966→              ? 'bg-background shadow-sm text-emerald-700 dark:text-emerald-300'
+   967→              : 'text-muted-foreground'
+   968→          )}
+   969→        >
+   970→          <Users className="w-3.5 h-3.5" />
+   971→          My Team
+   972→        </button>
+   973→        <button
+   974→          onClick={() => setScope('company')}
+   975→          className={cn(
+   976→            'py-1.5 rounded-lg text-xs font-medium transition-all flex items-center justify-center gap-1.5',
+   977→            scope === 'company'
+   978→              ? 'bg-background shadow-sm text-emerald-700 dark:text-emerald-300'
+   979→              : 'text-muted-foreground'
+   980→          )}
+   981→        >
+   982→          <Trophy className="w-3.5 h-3.5" />
+   983→          Company
+   984→        </button>
+   985→      </div>
+   986→
+   987→      {/* Team leaderboard */}
+   988→      <Card className="p-3">
+   989→        <div className="flex items-center gap-1.5 mb-2">
+   990→          <Users className="w-3.5 h-3.5 text-emerald-600" />
+   991→          <h3 className="text-xs font-semibold">Teams</h3>
+   992→          {leaderboard.myTeamRank > 0 && (
+   993→            <Badge
+   994→              variant="secondary"
+   995→              className="ml-auto text-[10px] h-5"
+   996→            >
+   997→              Yours: #{leaderboard.myTeamRank}
+   998→            </Badge>
+   999→          )}
+  1000→        </div>
+  1001→        <div className="space-y-1.5 max-h-48 overflow-y-auto mobile-scroll pr-1">
+  1002→          {leaderboard.teamLeaderboard.length === 0 ? (
+  1003→            <div className="p-4 text-center text-xs text-muted-foreground">
+  1004→              No team sessions yet.
+  1005→            </div>
+  1006→          ) : (
+  1007→            leaderboard.teamLeaderboard.slice(0, 6).map((team, idx) => {
+  1008→              const c = getColor(team.teamColor)
+  1009→              const pct = (team.totalHours / maxTeamHours) * 100
+  1010→              return (
+  1011→                <motion.div
+  1012→                  key={team.teamId}
+  1013→                  initial={{ opacity: 0, x: -6 }}
+  1014→                  animate={{ opacity: 1, x: 0 }}
+  1015→                  transition={{ delay: idx * 0.03 }}
+  1016→                  className={cn(
+  1017→                    'p-2 rounded-lg border',
+  1018→                    team.isMyTeam
+  1019→                      ? 'border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800'
+  1020→                      : 'border-border bg-card'
+  1021→                  )}
+  1022→                >
+  1023→                  <div className="flex items-center gap-2">
+  1024→                    <div
+  1025→                      className={cn(
+  1026→                        'w-5 text-center font-bold',
+  1027→                        idx < 3 ? RANK_TINT[idx] : 'text-muted-foreground'
+  1028→                      )}
+  1029→                    >
+  1030→                      {idx < 3 ? <Medal className="w-3.5 h-3.5 mx-auto" /> : idx + 1}
+  1031→                    </div>
+  1032→                    <div className="flex-1 min-w-0">
+  1033→                      <div className="flex items-center gap-1.5 mb-0.5">
+  1034→                        <div className={cn('w-2 h-2 rounded-full', c.dot)} />
+  1035→                        <span className="text-[11px] font-medium truncate">
+  1036→                          {team.teamName}
+  1037→                        </span>
+  1038→                      </div>
+  1039→                      <div className="h-1 bg-muted rounded-full overflow-hidden">
+  1040→                        <motion.div
+  1041→                          className={cn('h-full', c.bg)}
+  1042→                          initial={{ width: 0 }}
+  1043→                          animate={{ width: `${pct}%` }}
+  1044→                          transition={{ duration: 0.5, delay: idx * 0.03 }}
+  1045→                        />
+  1046→                      </div>
+  1047→                    </div>
+  1048→                    <div className="text-[11px] font-semibold shrink-0">
+  1049→                      {team.totalHours}h
+  1050→                    </div>
+  1051→                  </div>
+  1052→                </motion.div>
+  1053→              )
+  1054→            })
+  1055→          )}
+  1056→        </div>
+  1057→      </Card>
+  1058→
+  1059→      {/* Personal leaderboard */}
+  1060→      <Card className="p-3">
+  1061→        <div className="flex items-center gap-1.5 mb-2">
+  1062→          <Trophy className="w-3.5 h-3.5 text-amber-500" />
+  1063→          <h3 className="text-xs font-semibold">
+  1064→            {scope === 'team' ? 'My Team' : 'Top in Company'}
+  1065→          </h3>
+  1066→        </div>
+  1067→        <div className="space-y-1 max-h-72 overflow-y-auto mobile-scroll pr-1">
+  1068→          {personList.length === 0 ? (
+  1069→            <div className="p-4 text-center text-xs text-muted-foreground">
+  1070→              No sessions yet — be the first!
+  1071→            </div>
+  1072→          ) : (
+  1073→            personList.map((entry, idx) => {
+  1074→              const c = getColor(entry.avatarColor)
+  1075→              const pct = (entry.hours / maxPersonHours) * 100
+  1076→              return (
+  1077→                <motion.div
+  1078→                  key={entry.userId}
+  1079→                  initial={{ opacity: 0, x: 6 }}
+  1080→                  animate={{ opacity: 1, x: 0 }}
+  1081→                  transition={{ delay: idx * 0.03 }}
+  1082→                  className={cn(
+  1083→                    'p-1.5 rounded-lg flex items-center gap-2',
+  1084→                    entry.isMe
+  1085→                      ? 'bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800'
+  1086→                      : 'hover:bg-muted/40'
+  1087→                  )}
+  1088→                >
+  1089→                  <div
+  1090→                    className={cn(
+  1091→                      'w-5 text-center font-bold text-[11px]',
+  1092→                      idx < 3 ? RANK_TINT[idx] : 'text-muted-foreground'
+  1093→                    )}
+  1094→                  >
+  1095→                    {idx === 0 ? (
+  1096→                      <Crown className="w-3.5 h-3.5 mx-auto" />
+  1097→                    ) : (
+  1098→                      idx + 1
+  1099→                    )}
+  1100→                  </div>
+  1101→                  <div
+  1102→                    className={cn(
+  1103→                      'w-7 h-7 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-[10px] font-semibold shrink-0',
+  1104→                      c.gradient
+  1105→                    )}
+  1106→                  >
+  1107→                    {getInitials(entry.name)}
+  1108→                  </div>
+  1109→                  <div className="flex-1 min-w-0">
+  1110→                    <div className="flex items-center gap-1">
+  1111→                      <span className="text-[11px] font-medium truncate">
+  1112→                        {entry.name}
+  1113→                      </span>
+  1114→                      {entry.isMe && (
+  1115→                        <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400 text-[9px] h-4 px-1">
+  1116→                          You
+  1117→                        </Badge>
+  1118→                      )}
+  1119→                    </div>
+  1120→                    <div className="h-1 bg-muted rounded-full overflow-hidden mt-0.5">
+  1121→                      <motion.div
+  1122→                        className={cn('h-full', c.bg)}
+  1123→                        initial={{ width: 0 }}
+  1124→                        animate={{ width: `${pct}%` }}
+  1125→                        transition={{ duration: 0.4, delay: idx * 0.03 }}
+  1126→                      />
+  1127→                    </div>
+  1128→                  </div>
+  1129→                  <div className="text-right shrink-0">
+  1130→                    <div className="text-[11px] font-semibold">{entry.hours}h</div>
+  1131→                    <div className="text-[9px] text-muted-foreground">
+  1132→                      {entry.streak >= 2 ? `${entry.streak}🔥` : `${entry.streak}d`}
+  1133→                    </div>
+  1134→                  </div>
+  1135→                </motion.div>
+  1136→              )
+  1137→            })
+  1138→          )}
+  1139→        </div>
+  1140→      </Card>
+  1141→    </div>
+  1142→  )
+  1143→}
+  1144→
+  1145→// ============================================================
+  1146→// Rewards tab
+  1147→// ============================================================
+  1148→
+  1149→function RewardsTab({ data }: { data: MobileData }) {
+  1150→  const { summary, redemptions } = data.rewards
+  1151→
+  1152→  return (
+  1153→    <div className="space-y-3">
+  1154→      {/* Top summary card with circular progress */}
+  1155→      <Card className="p-4 relative overflow-hidden">
+  1156→        <div className="absolute -top-12 -right-12 w-32 h-32 rounded-full bg-emerald-100/60 dark:bg-emerald-950/40 blur-3xl" />
+  1157→        <div className="relative flex items-center gap-4">
+  1158→          <CircularProgress value={summary.total > 0 ? (summary.fulfilled / summary.total) * 100 : 0} />
+  1159→          <div className="flex-1">
+  1160→            <div className="flex items-center gap-1.5 mb-0.5">
+  1161→              <Gift className="w-4 h-4 text-emerald-600" />
+  1162→              <h2 className="font-bold text-sm">Your Rewards</h2>
+  1163→            </div>
+  1164→            <p className="text-lg font-bold tabular-nums">
+  1165→              {summary.fulfilled}
+  1166→              <span className="text-muted-foreground text-xs font-normal">
+  1167→                {' '}
+  1168→                / {summary.total} fulfilled
+  1169→              </span>
+  1170→            </p>
+  1171→            {summary.totalValue > 0 && (
+  1172→              <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">
+  1173→                ${summary.totalValue} total value
+  1174→              </p>
+  1175→            )}
+  1176→          </div>
+  1177→        </div>
+  1178→      </Card>
+  1179→
+  1180→      {/* Summary mini-stats */}
+  1181→      <div className="grid grid-cols-3 gap-2">
+  1182→        <MiniStat
+  1183→          icon={<Gift className="w-3.5 h-3.5" />}
+  1184→          tint="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+  1185→          label="Total"
+  1186→          value={`${summary.total}`}
+  1187→        />
+  1188→        <MiniStat
+  1189→          icon={<Check className="w-3.5 h-3.5" />}
+  1190→          tint="bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
+  1191→          label="Fulfilled"
+  1192→          value={`${summary.fulfilled}`}
+  1193→        />
+  1194→        <MiniStat
+  1195→          icon={<Clock className="w-3.5 h-3.5" />}
+  1196→          tint="bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300"
+  1197→          label="Pending"
+  1198→          value={`${summary.pending}`}
+  1199→        />
+  1200→      </div>
+  1201→
+  1202→      {/* Achievements quick summary */}
+  1203→      <Card className="p-3">
+  1204→        <div className="flex items-center gap-1.5 mb-2">
+  1205→          <Trophy className="w-3.5 h-3.5 text-amber-500" />
+  1206→          <h3 className="text-xs font-semibold">Achievements</h3>
+  1207→        </div>
+  1208→        <div className="grid grid-cols-4 gap-1.5">
+  1209→          {data.achievements.achievements
+  1210→            .filter((a) => a.unlocked)
+  1211→            .slice(0, 8)
+  1212→            .map((a) => {
+  1213→              const c = getColor(a.color || 'emerald')
+  1214→              return (
+  1215→                <div
+  1216→                  key={a.id}
+  1217→                  className={cn(
+  1218→                    'aspect-square rounded-xl flex items-center justify-center text-xl',
+  1219→                    c.bgSoft
+  1220→                  )}
+  1221→                  title={a.name}
+  1222→                >
+  1223→                  {a.icon}
+  1224→                </div>
+  1225→              )
+  1226→            })}
+  1227→          {data.achievements.achievements.filter((a) => a.unlocked).length === 0 && (
+  1228→            <div className="col-span-4 p-3 text-center text-xs text-muted-foreground">
+  1229→              No achievements unlocked yet. Start a focus session!
+  1230→            </div>
+  1231→          )}
+  1232→        </div>
+  1233→      </Card>
+  1234→
+  1235→      {/* Reward history */}
+  1236→      {redemptions.length === 0 ? (
+  1237→        <Card className="p-6 text-center">
+  1238→          <div className="text-4xl mb-1">🌱</div>
+  1239→          <h3 className="font-semibold text-sm">No rewards yet</h3>
+  1240→          <p className="text-[11px] text-muted-foreground mt-1">
+  1241→            Win challenges to earn rewards!
+  1242→          </p>
+  1243→        </Card>
+  1244→      ) : (
+  1245→        <div className="space-y-2">
+  1246→          <div className="flex items-center justify-between">
+  1247→            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+  1248→              Reward History
+  1249→            </h3>
+  1250→            <span className="text-[10px] text-muted-foreground">
+  1251→              {redemptions.length} item{redemptions.length === 1 ? '' : 's'}
+  1252→            </span>
+  1253→          </div>
+  1254→          {redemptions.map((r, i) => (
+  1255→            <RewardCardMobile key={r.id} redemption={r} index={i} />
+  1256→          ))}
+  1257→        </div>
+  1258→      )}
+  1259→    </div>
+  1260→  )
+  1261→}
+  1262→
+  1263→function RewardCardMobile({
+  1264→  redemption,
+  1265→  index,
+  1266→}: {
+  1267→  redemption: Redemption
+  1268→  index: number
+  1269→}) {
+  1270→  const tierMeta = TIER_META[redemption.tier] ?? TIER_META.PARTICIPATION
+  1271→  const statusMeta = STATUS_META[redemption.status] ?? STATUS_META.PENDING
+  1272→  const c = getColor(redemption.reward.imageColor || 'emerald')
+  1273→  const isFulfilled = redemption.status === 'FULFILLED' && !!redemption.code
+  1274→  const isDeclined = redemption.status === 'DECLINED' || redemption.status === 'EXPIRED'
+  1275→
+  1276→  return (
+  1277→    <motion.div
+  1278→      initial={{ opacity: 0, y: 6 }}
+  1279→      animate={{ opacity: 1, y: 0 }}
+  1280→      transition={{ delay: index * 0.04, duration: 0.25 }}
+  1281→    >
+  1282→      <Card className={cn('p-3 relative overflow-hidden', isDeclined && 'opacity-60')}>
+  1283→        <div
+  1284→          className={cn(
+  1285→            'absolute -top-8 -right-8 w-24 h-24 rounded-full blur-2xl pointer-events-none',
+  1286→            c.bgSoft
+  1287→          )}
+  1288→        />
+  1289→        <div className="relative flex items-start gap-2.5">
+  1290→          <div
+  1291→            className={cn(
+  1292→              'w-10 h-10 rounded-xl flex items-center justify-center shrink-0',
+  1293→              c.bgSoft
+  1294→            )}
+  1295→          >
+  1296→            <Gift className={cn('w-4 h-4', c.text)} />
+  1297→          </div>
+  1298→          <div className="flex-1 min-w-0">
+  1299→            <div className="flex items-start justify-between gap-1">
+  1300→              <h4 className="font-semibold text-xs leading-tight truncate">
+  1301→                {redemption.reward.name}
+  1302→              </h4>
+  1303→              {redemption.reward.value > 0 && (
+  1304→                <span className={cn('text-xs font-bold shrink-0', c.text)}>
+  1305→                  ${redemption.reward.value}
+  1306→                </span>
+  1307→              )}
+  1308→            </div>
+  1309→            <div className="flex items-center flex-wrap gap-1 mt-1">
+  1310→              <Badge variant="outline" className={cn('text-[9px] py-0 h-4', tierMeta.tint)}>
+  1311→                {tierMeta.label}
+  1312→                {redemption.position > 0 && redemption.position <= 3 && (
+  1313→                  <span className="ml-0.5">#{redemption.position}</span>
+  1314→                )}
+  1315→              </Badge>
+  1316→              <Badge variant="outline" className={cn('text-[9px] py-0 h-4', statusMeta.tint)}>
+  1317→                <span className={cn('w-1 h-1 rounded-full', statusMeta.dot)} />
+  1318→                {statusMeta.label}
+  1319→              </Badge>
+  1320→            </div>
+  1321→          </div>
+  1322→        </div>
+  1323→        {isFulfilled && (
+  1324→          <div className="mt-2 p-2 rounded-lg border border-dashed border-emerald-300 dark:border-emerald-700 bg-emerald-50/50 dark:bg-emerald-950/20">
+  1325→            <div className="text-[9px] font-medium text-emerald-700 dark:text-emerald-300 mb-0.5">
+  1326→              Code
+  1327→            </div>
+  1328→            <code className="text-xs font-mono font-semibold tracking-wide break-all">
+  1329→              {redemption.code}
+  1330→            </code>
+  1331→          </div>
+  1332→        )}
+  1333→        <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
+  1334→          <Calendar className="w-2.5 h-2.5" />
+  1335→          <span>Earned {formatDate(redemption.redeemedAt)}</span>
+  1336→        </div>
+  1337→      </Card>
+  1338→    </motion.div>
+  1339→  )
+  1340→}
+  1341→
+  1342→// ============================================================
+  1343→// Profile tab
+  1344→// ============================================================
+  1345→
+  1346→function ProfileTab({
+  1347→  data,
+  1348→  onExit,
+  1349→}: {
+  1350→  data: MobileData
+  1351→  onExit?: () => void
+  1352→}) {
+  1353→  const c = getColor(data.user.avatarColor || 'emerald')
+  1354→  const unlocked = data.achievements.achievements.filter((a) => a.unlocked)
+  1355→
+  1356→  return (
+  1357→    <div className="space-y-3">
+  1358→      {/* Profile header */}
+  1359→      <Card className="p-4 relative overflow-hidden">
+  1360→        <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full bg-emerald-100/60 dark:bg-emerald-950/40 blur-2xl" />
+  1361→        <div className="relative flex items-center gap-3">
+  1362→          <div
+  1363→            className={cn(
+  1364→              'w-16 h-16 rounded-2xl bg-gradient-to-br flex items-center justify-center text-white text-xl font-bold shrink-0',
+  1365→              c.gradient
+  1366→            )}
+  1367→          >
+  1368→            {getInitials(data.user.name)}
+  1369→          </div>
+  1370→          <div className="min-w-0 flex-1">
+  1371→            <h2 className="font-bold text-base leading-tight truncate">
+  1372→              {data.user.name}
+  1373→            </h2>
+  1374→            {data.user.title && (
+  1375→              <p className="text-[11px] text-muted-foreground truncate">
+  1376→                {data.user.title}
+  1377→              </p>
+  1378→            )}
+  1379→            <div className="flex items-center flex-wrap gap-1 mt-1.5">
+  1380→              {data.team && (
+  1381→                <Badge
+  1382→                  variant="outline"
+  1383→                  className={cn('text-[9px] py-0 h-4', c.text, c.border)}
+  1384→                >
+  1385→                  <div className={cn('w-1.5 h-1.5 rounded-full', c.dot)} />
+  1386→                  {data.team.name}
+  1387→                </Badge>
+  1388→              )}
+  1389→              {data.company && (
+  1390→                <Badge variant="outline" className="text-[9px] py-0 h-4 text-muted-foreground">
+  1391→                  {data.company.name}
+  1392→                </Badge>
+  1393→              )}
+  1394→            </div>
+  1395→          </div>
+  1396→        </div>
+  1397→      </Card>
+  1398→
+  1399→      {/* Stats grid */}
+  1400→      <div className="grid grid-cols-2 gap-2">
+  1401→        <StatTile
+  1402→          icon={<Clock className="w-4 h-4" />}
+  1403→          tint="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+  1404→          label="Total Hours"
+  1405→          value={`${data.user.totalFocusHours}h`}
+  1406→        />
+  1407→        <StatTile
+  1408→          icon={<Target className="w-4 h-4" />}
+  1409→          tint="bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300"
+  1410→          label="Sessions"
+  1411→          value={`${data.user.totalSessions}`}
+  1412→        />
+  1413→        <StatTile
+  1414→          icon={<Flame className="w-4 h-4" />}
+  1415→          tint="bg-orange-100 text-orange-700 dark:bg-orange-950/50 dark:text-orange-300"
+  1416→          label="Current Streak"
+  1417→          value={`${data.user.streak}d`}
+  1418→        />
+  1419→        <StatTile
+  1420→          icon={<Award className="w-4 h-4" />}
+  1421→          tint="bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
+  1422→          label="Best Streak"
+  1423→          value={`${data.user.bestStreak}d`}
+  1424→        />
+  1425→      </div>
+  1426→
+  1427→      {/* Points summary */}
+  1428→      <Card className="p-3 flex items-center gap-3">
+  1429→        <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-950/50 flex items-center justify-center shrink-0">
+  1430→          <Sparkles className="w-4 h-4 text-amber-600" />
+  1431→        </div>
+  1432→        <div className="flex-1">
+  1433→          <div className="text-[11px] text-muted-foreground">Total Points</div>
+  1434→          <div className="text-lg font-bold text-amber-600 dark:text-amber-400 tabular-nums">
+  1435→            {data.user.totalPoints}
+  1436→          </div>
+  1437→        </div>
+  1438→        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+  1439→      </Card>
+  1440→
+  1441→      {/* Achievements */}
+  1442→      <Card className="p-3">
+  1443→        <div className="flex items-center justify-between mb-2">
+  1444→          <div className="flex items-center gap-1.5">
+  1445→            <Trophy className="w-3.5 h-3.5 text-amber-500" />
+  1446→            <h3 className="text-xs font-semibold">Achievements</h3>
+  1447→          </div>
+  1448→          <Badge variant="secondary" className="text-[10px] h-5">
+  1449→            {data.achievements.summary.unlocked}/{data.achievements.summary.total}
+  1450→          </Badge>
+  1451→        </div>
+  1452→        {unlocked.length === 0 ? (
+  1453→          <div className="p-3 text-center text-xs text-muted-foreground">
+  1454→            <Lock className="w-5 h-5 mx-auto mb-1 opacity-50" />
+  1455→            No badges yet. Complete a session to start unlocking!
+  1456→          </div>
+  1457→        ) : (
+  1458→          <div className="grid grid-cols-4 gap-1.5">
+  1459→            {unlocked.map((a) => {
+  1460→              const ac = getColor(a.color || 'emerald')
+  1461→              return (
+  1462→                <div
+  1463→                  key={a.id}
+  1464→                  className={cn(
+  1465→                    'aspect-square rounded-xl flex flex-col items-center justify-center p-1 text-center',
+  1466→                    ac.bgSoft
+  1467→                  )}
+  1468→                  title={a.name}
+  1469→                >
+  1470→                  <div className="text-lg">{a.icon}</div>
+  1471→                  <div className="text-[8px] font-medium leading-tight line-clamp-1 mt-0.5">
+  1472→                    {a.name}
+  1473→                  </div>
+  1474→                </div>
+  1475→              )
+  1476→            })}
+  1477→          </div>
+  1478→        )}
+  1479→      </Card>
+  1480→
+  1481→      {/* Last completed challenge result */}
+  1482→      {data.lastCompleted && (
+  1483→        <Card
+  1484→          className={cn(
+  1485→            'p-3',
+  1486→            data.lastCompleted.isWinner
+  1487→              ? 'bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border-amber-300 dark:border-amber-800'
+  1488→              : ''
+  1489→          )}
+  1490→        >
+  1491→          <div className="flex items-start gap-2.5">
+  1492→            <div
+  1493→              className={cn(
+  1494→                'w-9 h-9 rounded-xl flex items-center justify-center shrink-0',
+  1495→                data.lastCompleted.isWinner
+  1496→                  ? 'bg-amber-400'
+  1497→                  : 'bg-muted'
+  1498→              )}
+  1499→            >
+  1500→              {data.lastCompleted.isWinner ? (
+  1501→                <PartyPopper className="w-4 h-4 text-white" />
+  1502→              ) : (
+  1503→                <Frown className="w-4 h-4 text-muted-foreground" />
+  1504→              )}
+  1505→            </div>
+  1506→            <div className="flex-1 min-w-0">
+  1507→              {data.lastCompleted.isWinner ? (
+  1508→                <Badge className="bg-amber-200 text-amber-900 hover:bg-amber-200 mb-1 text-[9px] h-4">
+  1509→                  🏆 You Won!
+  1510→                </Badge>
+  1511→              ) : null}
+  1512→              <h4 className="text-xs font-semibold leading-tight">
+  1513→                {data.lastCompleted.isWinner
+  1514→                  ? `Won "${data.lastCompleted.name}"`
+  1515→                  : `"${data.lastCompleted.name}" ended`}
+  1516→              </h4>
+  1517→              <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">
+  1518→                {data.lastCompleted.isWinner
+  1519→                  ? `Prize: ${data.lastCompleted.prize}`
+  1520→                  : `Winner: ${data.lastCompleted.winnerTeam?.name || '—'}. Better luck next time!`}
+  1521→              </p>
+  1522→            </div>
+  1523→          </div>
+  1524→        </Card>
+  1525→      )}
+  1526→
+  1527→      {/* Settings (static in preview) */}
+  1528→      <Card className="p-0 overflow-hidden">
+  1529→        <button
+  1530→          className="w-full flex items-center gap-2.5 p-3 hover:bg-muted/40 transition-colors text-left"
+  1531→          type="button"
+  1532→        >
+  1533→          <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
+  1534→            <Bell className="w-4 h-4 text-muted-foreground" />
+  1535→          </div>
+  1536→          <div className="flex-1 min-w-0">
+  1537→            <div className="text-xs font-medium">Notification Preferences</div>
+  1538→            <div className="text-[10px] text-muted-foreground">
+  1539→              Static in preview
+  1540→            </div>
+  1541→          </div>
+  1542→          <ChevronRight className="w-4 h-4 text-muted-foreground" />
+  1543→        </button>
+  1544→      </Card>
+  1545→
+  1546→      {/* Exit preview */}
+  1547→      {onExit && (
+  1548→        <Button
+  1549→          variant="outline"
+  1550→          onClick={onExit}
+  1551→          className="w-full h-11 rounded-2xl"
+  1552→        >
+  1553→          Exit Preview
+  1554→        </Button>
+  1555→      )}
+  1556→
+  1557→      <div className="text-center text-[10px] text-muted-foreground pt-1 pb-2">
+  1558→        FocusPot Mobile · v1.0
+  1559→        <br />
+  1560→        Preview Mode
+  1561→      </div>
+  1562→    </div>
+  1563→  )
+  1564→}
+  1565→
+  1566→function StatTile({
+  1567→  icon,
+  1568→  tint,
+  1569→  label,
+  1570→  value,
+  1571→}: {
+  1572→  icon: React.ReactNode
+  1573→  tint: string
+  1574→  label: string
+  1575→  value: string
+  1576→}) {
+  1577→  return (
+  1578→    <Card className="p-3">
+  1579→      <div className="flex items-center gap-1.5 mb-1">
+  1580→        <div className={cn('w-6 h-6 rounded-md flex items-center justify-center', tint)}>
+  1581→          {icon}
+  1582→        </div>
+  1583→      </div>
+  1584→      <div className="text-[10px] text-muted-foreground">{label}</div>
+  1585→      <div className="text-base font-bold tabular-nums">{value}</div>
+  1586→    </Card>
+  1587→  )
+  1588→}
+  1589→
+  1590→// ============================================================
+  1591→// Circular progress (small, mobile-friendly)
+  1592→// ============================================================
+  1593→
+  1594→function CircularProgress({ value, size = 72, stroke = 7 }: { value: number; size?: number; stroke?: number }) {
+  1595→  const radius = (size - stroke) / 2
+  1596→  const circumference = 2 * Math.PI * radius
+  1597→  const clamped = Math.max(0, Math.min(100, value))
+  1598→  const offset = circumference - (clamped / 100) * circumference
+  1599→  return (
+  1600→    <div
+  1601→      className="relative shrink-0"
+  1602→      style={{ width: size, height: size }}
+  1603→      role="img"
+  1604→      aria-label={`${clamped}% fulfilled`}
+  1605→    >
+  1606→      <svg width={size} height={size} className="-rotate-90">
+  1607→        <circle
+  1608→          cx={size / 2}
+  1609→          cy={size / 2}
+  1610→          r={radius}
+  1611→          fill="none"
+  1612→          strokeWidth={stroke}
+  1613→          className="stroke-muted"
+  1614→        />
+  1615→        <circle
+  1616→          cx={size / 2}
+  1617→          cy={size / 2}
+  1618→          r={radius}
+  1619→          fill="none"
+  1620→          strokeWidth={stroke}
+  1621→          strokeLinecap="round"
+  1622→          stroke="url(#mobileRewardGradient)"
+  1623→          strokeDasharray={circumference}
+  1624→          strokeDashoffset={offset}
+  1625→          className="transition-all duration-700 ease-out"
+  1626→        />
+  1627→        <defs>
+  1628→          <linearGradient id="mobileRewardGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+  1629→            <stop offset="0%" stopColor="#10b981" />
+  1630→            <stop offset="100%" stopColor="#14b8a6" />
+  1631→          </linearGradient>
+  1632→        </defs>
+  1633→      </svg>
+  1634→      <div className="absolute inset-0 flex flex-col items-center justify-center">
+  1635→        <span className="text-sm font-bold tabular-nums">{clamped}%</span>
+  1636→      </div>
+  1637→    </div>
+  1638→  )
+  1639→}
+  1640→
+  1641→// ============================================================
+  1642→// Bottom tab bar — iOS/Android style
+  1643→// ============================================================
+  1644→
+  1645→function BottomTabBar({
+  1646→  tab,
+  1647→  setTab,
+  1648→}: {
+  1649→  tab: TabKey
+  1650→  setTab: (t: TabKey) => void
+  1651→}) {
+  1652→  const tabs: Array<{ key: TabKey; label: string; icon: typeof TimerIcon }> = [
+  1653→    { key: 'timer', label: 'Timer', icon: TimerIcon },
+  1654→    { key: 'leaderboard', label: 'Ranks', icon: Trophy },
+  1655→    { key: 'rewards', label: 'Rewards', icon: Gift },
+  1656→    { key: 'profile', label: 'Profile', icon: UserIcon },
+  1657→  ]
+  1658→  return (
+  1659→    <nav
+  1660→      className="shrink-0 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 pb-5"
+  1661→      aria-label="Mobile app navigation"
+  1662→    >
+  1663→      <div className="grid grid-cols-4 gap-0">
+  1664→        {tabs.map((t) => {
+  1665→          const active = tab === t.key
+  1666→          const Icon = t.icon
+  1667→          return (
+  1668→            <button
+  1669→              key={t.key}
+  1670→              onClick={() => setTab(t.key)}
+  1671→              className="relative flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] transition-colors"
+  1672→              aria-current={active ? 'page' : undefined}
+  1673→              aria-label={t.label}
+  1674→            >
+  1675→              {active && (
+  1676→                <motion.div
+  1677→                  layoutId="tabIndicator"
+  1678→                  className="absolute top-0 h-0.5 w-10 rounded-full bg-emerald-500"
+  1679→                  transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+  1680→                />
+  1681→              )}
+  1682→              <Icon
+  1683→                className={cn(
+  1684→                  'w-5 h-5 transition-colors',
+  1685→                  active
+  1686→                    ? 'text-emerald-600 dark:text-emerald-400'
+  1687→                    : 'text-muted-foreground'
+  1688→                )}
+  1689→                strokeWidth={active ? 2.4 : 2}
+  1690→              />
+  1691→              <span
+  1692→                className={cn(
+  1693→                  'text-[10px] font-medium transition-colors',
+  1694→                  active
+  1695→                    ? 'text-emerald-600 dark:text-emerald-400'
+  1696→                    : 'text-muted-foreground'
+  1697→                )}
+  1698→              >
+  1699→                {t.label}
+  1700→              </span>
+  1701→            </button>
+  1702→          )
+  1703→        })}
+  1704→      </div>
+  1705→    </nav>
+  1706→  )
+  1707→}
+  1708→

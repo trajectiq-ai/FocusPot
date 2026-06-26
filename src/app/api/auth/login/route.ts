@@ -63,6 +63,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'This account has been deactivated. Contact your administrator.' }, { status: 403 })
   }
 
+  // ARCHITECTURE ENFORCEMENT: The web application is for Super Admins and Company Admins only.
+  // Employees must use the FocusPot mobile app (Android/iOS). Deny web access.
+  if (user.role === 'EMPLOYEE') {
+    await recordLoginAttempt({ userId: user.id, success: false, failureReason: 'Employee web access denied' })
+    await auditLog({ userId: user.id, action: 'WEB_ACCESS_DENIED', entityType: 'User', entityId: user.id, companyId: user.companyId || undefined, metadata: { reason: 'Employee attempted web login' } })
+    return NextResponse.json(
+      {
+        error: 'EMPLOYEE_WEB_ACCESS_DENIED',
+        message: 'Employees must use the FocusPot mobile app (Android & iOS). The web portal is for administrators only.',
+      },
+      { status: 403 }
+    )
+  }
+
   // Block login for employees of canceled companies
   if (user.role === 'EMPLOYEE' && user.companyId) {
     const company = await db.company.findUnique({ where: { id: user.companyId }, select: { subscriptionStatus: true, maintenanceMode: true } })

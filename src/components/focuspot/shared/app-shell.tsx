@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { LogOut, ChevronDown, Settings } from 'lucide-react'
+import { LogOut, ChevronDown, Settings, Smartphone } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProfileDialog } from '@/components/focuspot/employee/profile-dialog'
 
@@ -28,13 +28,23 @@ export function AppShell({
   children: React.ReactNode
   nav?: React.ReactNode
 }) {
-  const { user, logout } = useAuthStore()
+  const { user, logout, setMobilePreview } = useAuthStore()
   const [profileOpen, setProfileOpen] = useState(false)
 
   const handleLogout = async () => {
     await logout()
     toast.success('Signed out')
   }
+
+  const handleMobilePreview = () => {
+    // Open the mobile app preview simulator with no employee preselected.
+    // The admin picks an employee from inside the phone frame.
+    setMobilePreview(true, null)
+    toast('📱 Opening Mobile App Preview', { duration: 2000 })
+  }
+
+  const canPreviewMobile =
+    user?.role === 'SUPER_ADMIN' || user?.role === 'COMPANY_ADMIN'
 
   const roleInfo = user ? roleLabels[user.role] : { label: '', color: 'emerald' }
   const c = getColor(user?.avatarColor || 'emerald')
@@ -61,38 +71,64 @@ export function AppShell({
           {/* Nav (desktop) */}
           {nav && <nav className="hidden md:flex items-center gap-1">{nav}</nav>}
 
-          {/* User menu */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-full hover:bg-muted transition-colors">
-                <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${c.gradient} flex items-center justify-center text-white text-xs font-semibold`}>
-                  {user ? getInitials(user.name) : '?'}
+          <div className="flex items-center gap-2">
+            {/* Mobile App Preview — admin testing tool */}
+            {canPreviewMobile && (
+              <Button
+                onClick={handleMobilePreview}
+                variant="outline"
+                size="sm"
+                className="hidden sm:inline-flex border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
+                aria-label="Preview Mobile App"
+                title="Preview the employee mobile app experience"
+              >
+                <Smartphone className="w-4 h-4 mr-1.5" />
+                Preview Mobile App
+              </Button>
+            )}
+
+            {/* User menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-full hover:bg-muted transition-colors">
+                  <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${c.gradient} flex items-center justify-center text-white text-xs font-semibold`}>
+                    {user ? getInitials(user.name) : '?'}
+                  </div>
+                  <span className="hidden sm:inline text-sm font-medium max-w-[120px] truncate">{user?.name}</span>
+                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <div className="px-2 py-1.5">
+                  <p className="text-sm font-medium truncate">{user?.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
                 </div>
-                <span className="hidden sm:inline text-sm font-medium max-w-[120px] truncate">{user?.name}</span>
-                <ChevronDown className="w-4 h-4 text-muted-foreground" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <div className="px-2 py-1.5">
-                <p className="text-sm font-medium truncate">{user?.name}</p>
-                <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
-              </div>
-              <DropdownMenuSeparator />
-              {user?.role === 'EMPLOYEE' && (
-                <DropdownMenuItem
-                  onClick={() => setProfileOpen(true)}
-                  className="cursor-pointer"
-                >
-                  <Settings className="w-4 h-4 mr-2" />
-                  Profile &amp; Settings
+                <DropdownMenuSeparator />
+                {canPreviewMobile && (
+                  <DropdownMenuItem
+                    onClick={handleMobilePreview}
+                    className="cursor-pointer"
+                  >
+                    <Smartphone className="w-4 h-4 mr-2 text-emerald-600" />
+                    Preview Mobile App
+                  </DropdownMenuItem>
+                )}
+                {user?.role === 'EMPLOYEE' && (
+                  <DropdownMenuItem
+                    onClick={() => setProfileOpen(true)}
+                    className="cursor-pointer"
+                  >
+                    <Settings className="w-4 h-4 mr-2" />
+                    Profile &amp; Settings
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive cursor-pointer">
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Sign out
                 </DropdownMenuItem>
-              )}
-              <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive cursor-pointer">
-                <LogOut className="w-4 h-4 mr-2" />
-                Sign out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
         {/* Mobile nav */}
         {nav && (
