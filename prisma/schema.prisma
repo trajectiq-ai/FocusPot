@@ -1,5 +1,5 @@
 // FocusPot - B2B Deep Work Competition Platform
-// Prisma schema for SQLite
+// Enterprise-hardened Prisma schema for SQLite
 
 generator client {
   provider = "prisma-client-js"
@@ -10,52 +10,79 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ============================================================
+// CORE ENTITIES
+// ============================================================
+
 // Three roles: SUPER_ADMIN, COMPANY_ADMIN, EMPLOYEE
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String
-  password     String   @default("demo")
-  title        String   @default("") // job title, e.g. "Senior Designer"
-  role         String   @default("EMPLOYEE") // SUPER_ADMIN | COMPANY_ADMIN | EMPLOYEE
-  companyId    String?
-  teamId       String?
-  avatarColor  String   @default("emerald")
-  active       Boolean  @default(true) // soft-delete / deactivation
-  streak       Int      @default(0)
-  bestStreak   Int      @default(0)
-  lastFocusDate String?  // ISO date string (YYYY-MM-DD)
-  totalFocusHours Float  @default(0)
-  totalPoints  Int      @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  email               String   @unique
+  name                String
+  password            String   @default("demo")
+  title               String   @default("")
+  role                String   @default("EMPLOYEE")
+  companyId           String?
+  teamId              String?
+  avatarColor         String   @default("emerald")
+  active              Boolean  @default(true)
 
-  company      Company? @relation(fields: [companyId], references: [id])
-  team         Team?    @relation(fields: [teamId], references: [id])
-  sessions     FocusSession[]
-  notifications Notification[]
+  // Gamification stats (denormalized for fast reads)
+  streak              Int      @default(0)
+  bestStreak          Int      @default(0)
+  lastFocusDate       String?
+  totalFocusHours     Float    @default(0)
+  totalPoints         Int      @default(0)
+  totalSessions       Int      @default(0)
+
+  // Security fields
+  failedLoginAttempts Int      @default(0)
+  lockedUntil         DateTime?
+  passwordChangedAt   DateTime @default(now())
+  lastLoginAt         DateTime?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  company             Company?           @relation(fields: [companyId], references: [id])
+  team                Team?              @relation(fields: [teamId], references: [id])
+  sessions            FocusSession[]
+  notifications       Notification[]
+  loginHistory        LoginHistory[]
+  auditLogs           AuditLog[]
+  rewardRedemptions   RewardRedemption[]
+  userAchievements    UserAchievement[]
+  stats               EmployeeStatistics[]
+  notificationPref    NotificationPreference?
 
   @@index([companyId])
   @@index([teamId])
   @@index([role])
   @@index([active])
+  @@index([email])
 }
 
 model Company {
-  id                String   @id @default(cuid())
-  name              String
-  domain            String   @unique
-  joinCode          String   @unique // employees use this to join the workspace
-  plan              String   @default("STARTER") // STARTER ($99/50) | GROWTH ($199/200)
-  seats             Int      @default(50)
-  subscriptionStatus String  @default("ACTIVE") // ACTIVE | PAST_DUE | CANCELED
-  monthlyRevenue    Int      @default(99)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  name               String
+  domain             String   @unique
+  joinCode           String   @unique
+  plan               String   @default("STARTER")
+  seats              Int      @default(50)
+  subscriptionStatus String   @default("ACTIVE")
+  monthlyRevenue     Int      @default(99)
+  maintenanceMode    Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  teams             Team[]
-  users             User[]
-  challenges        Challenge[]
+  teams              Team[]
+  users              User[]
+  challenges         Challenge[]
+  settings           CompanySettings?
+  stats              CompanyStatistics[]
+  invitations        Invitation[]
+  auditLogs          AuditLog[]
+  rewards            Reward[]
 
   @@index([subscriptionStatus])
 }
@@ -72,32 +99,61 @@ model Team {
   users          User[]
   sessions       FocusSession[]
   wonChallenges  Challenge[] @relation("ChallengeWinner")
+  stats          TeamStatistics[]
 
   @@index([companyId])
 }
 
-// Challenge lifecycle: DRAFT -> ACTIVE -> COMPLETED
-model Challenge {
-  id           String   @id @default(cuid())
-  name         String
-  description  String   @default("")
-  companyId    String
-  startDate    DateTime
-  endDate      DateTime
-  prize        String
-  giftCardCode String   @default("")
-  giftCardValue Int     @default(0)
-  status       String   @default("ACTIVE") // DRAFT | ACTIVE | COMPLETED
-  winnerTeamId String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+// ============================================================
+// CHALLENGE ENGINE
+// ============================================================
 
-  company      Company  @relation(fields: [companyId], references: [id])
-  sessions     FocusSession[]
-  winnerTeam   Team?    @relation("ChallengeWinner", fields: [winnerTeamId], references: [id])
+// Challenge lifecycle: DRAFT -> SCHEDULED -> ACTIVE -> COMPLETED | CANCELLED
+// Supports: recurring, team-specific, department-specific, concurrent
+model Challenge {
+  id                String   @id @default(cuid())
+  name              String
+  description       String   @default("")
+  companyId         String
+  startDate         DateTime
+  endDate           DateTime
+  prize             String
+  giftCardCode      String   @default("")
+  giftCardValue     Int      @default(0)
+  status            String   @default("DRAFT") // DRAFT | SCHEDULED | ACTIVE | COMPLETED | CANCELLED
+  winnerTeamId      String?
+  archived          Boolean  @default(false)
+
+  // Scoring model
+  scoringModel      String   @default("TOTAL_HOURS") // TOTAL_HOURS | AVG_PER_MEMBER | PARTICIPATION_RATE | WEIGHTED
+  scoringWeights    String   @default("") // JSON string for WEIGHTED model
+
+  // Scope
+  scope             String   @default("COMPANY") // COMPANY | TEAM
+  targetTeamId      String?  // when scope=TEAM
+
+  // Recurrence
+  isRecurring       Boolean  @default(false)
+  recurrencePattern String   @default("") // "weekly" | "biweekly"
+  parentChallengeId String?  // links recurring instances to parent
+
+  // Cancellation
+  cancelledReason   String   @default("")
+  cancelledAt       DateTime?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  company           Company  @relation(fields: [companyId], references: [id])
+  sessions          FocusSession[]
+  winnerTeam        Team?    @relation("ChallengeWinner", fields: [winnerTeamId], references: [id])
+  rewards           ChallengeReward[]
 
   @@index([companyId])
   @@index([status])
+  @@index([scope, targetTeamId])
+  @@index([isRecurring])
+  @@index([archived])
 }
 
 model FocusSession {
@@ -110,6 +166,7 @@ model FocusSession {
   durationMinutes Int      @default(0)
   points          Int      @default(0)
   completed       Boolean  @default(false)
+  archived        Boolean  @default(false)
   createdAt       DateTime @default(now())
 
   user            User     @relation(fields: [userId], references: [id])
@@ -120,18 +177,331 @@ model FocusSession {
   @@index([teamId])
   @@index([companyId])
   @@index([challengeId])
+  @@index([startTime])
+  @@index([archived])
 }
 
-model Notification {
-  id        String   @id @default(cuid())
-  userId    String
-  title     String
-  message   String
-  type      String   @default("INFO") // INFO | SUCCESS | WARNING | CHALLENGE
-  read      Boolean  @default(false)
-  createdAt DateTime @default(now())
+// ============================================================
+// REWARDS SYSTEM
+// ============================================================
 
-  user      User     @relation(fields: [userId], references: [id])
+model Reward {
+  id           String   @id @default(cuid())
+  name         String
+  description  String   @default("")
+  type         String   @default("GIFT_CARD") // GIFT_CARD | MERCH | EXPERIENCE | CUSTOM
+  value        Int      @default(0)
+  provider     String   @default("")
+  providerSku  String   @default("")
+  inventory    Int      @default(-1) // -1 = unlimited
+  imageColor   String   @default("emerald")
+  active       Boolean  @default(true)
+  expiresAt    DateTime?
+  companyId    String?  // null = platform-wide
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company      Company?           @relation(fields: [companyId], references: [id])
+  redemptions  RewardRedemption[]
+  challengeRewards ChallengeReward[]
+
+  @@index([companyId])
+  @@index([active])
+}
+
+model RewardRedemption {
+  id          String   @id @default(cuid())
+  rewardId    String
+  userId      String
+  challengeId String?
+  companyId   String
+  tier        String   @default("WINNER") // WINNER | RUNNER_UP | PARTICIPATION
+  position    Int      @default(1)
+  status      String   @default("PENDING") // PENDING | APPROVED | FULFILLED | DECLINED | EXPIRED
+  code        String   @default("")
+  notes       String   @default("")
+  redeemedAt  DateTime @default(now())
+  fulfilledAt DateTime?
+  expiresAt   DateTime?
+
+  reward      Reward   @relation(fields: [rewardId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([rewardId])
+  @@index([userId])
+  @@index([companyId])
+  @@index([status])
+  @@index([challengeId])
+}
+
+model ChallengeReward {
+  id           String   @id @default(cuid())
+  challengeId  String
+  rewardId     String
+  tier         String   @default("WINNER") // WINNER | RUNNER_UP | PARTICIPATION
+  position     Int      @default(1)
+
+  challenge    Challenge @relation(fields: [challengeId], references: [id])
+  reward       Reward    @relation(fields: [rewardId], references: [id])
+
+  @@index([challengeId])
+  @@index([rewardId])
+}
+
+// ============================================================
+// ANALYTICS — materialized aggregates
+// ============================================================
+
+model EmployeeStatistics {
+  id              String   @id @default(cuid())
+  userId          String
+  date            String   // YYYY-MM-DD
+  focusMinutes    Int      @default(0)
+  sessionCount    Int      @default(0)
+  points          Int      @default(0)
+  longestSession  Int      @default(0)
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, date])
+  @@index([userId])
+  @@index([date])
+}
+
+model TeamStatistics {
+  id              String   @id @default(cuid())
+  teamId          String
+  date            String
+  focusMinutes    Int      @default(0)
+  sessionCount    Int      @default(0)
+  points          Int      @default(0)
+  activeMembers   Int      @default(0)
+  updatedAt       DateTime @updatedAt
+
+  team            Team     @relation(fields: [teamId], references: [id])
+
+  @@unique([teamId, date])
+  @@index([teamId])
+  @@index([date])
+}
+
+model CompanyStatistics {
+  id              String   @id @default(cuid())
+  companyId       String
+  date            String
+  focusMinutes    Int      @default(0)
+  sessionCount    Int      @default(0)
+  points          Int      @default(0)
+  activeEmployees Int      @default(0)
+  updatedAt       DateTime @updatedAt
+
+  company         Company  @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, date])
+  @@index([companyId])
+  @@index([date])
+}
+
+// ============================================================
+// SECURITY & AUDIT
+// ============================================================
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  action      String
+  entityType  String
+  entityId    String?
+  companyId   String?
+  metadata    String   @default("{}") // JSON
+  ipAddress   String   @default("")
+  createdAt   DateTime @default(now())
+
+  user        User?    @relation(fields: [userId], references: [id])
+  company     Company? @relation(fields: [companyId], references: [id])
 
   @@index([userId])
+  @@index([companyId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model LoginHistory {
+  id            String   @id @default(cuid())
+  userId        String
+  ipAddress     String   @default("")
+  userAgent     String   @default("")
+  success       Boolean
+  failureReason String   @default("")
+  createdAt     DateTime @default(now())
+
+  user          User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model Invitation {
+  id          String   @id @default(cuid())
+  email       String
+  companyId   String
+  teamId      String?
+  role        String   @default("EMPLOYEE")
+  token       String   @unique
+  status      String   @default("PENDING") // PENDING | ACCEPTED | EXPIRED | REVOKED
+  invitedBy   String
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  company     Company  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
+  @@index([email])
+  @@index([status])
+}
+
+// ============================================================
+// SETTINGS & PREFERENCES
+// ============================================================
+
+model CompanySettings {
+  id                String   @id @default(cuid())
+  companyId         String   @unique
+  timezone          String   @default("America/Chicago")
+  workingHoursStart String   @default("09:00")
+  workingHoursEnd   String   @default("17:00")
+  workingDays       String   @default("1,2,3,4,5")
+  primaryColor      String   @default("emerald")
+  logoText          String   @default("")
+  holidayCalendar   String   @default("[]") // JSON array of dates
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  company           Company  @relation(fields: [companyId], references: [id])
+}
+
+model NotificationPreference {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  challengeStart  Boolean  @default(true)
+  challengeEnd    Boolean  @default(true)
+  challengeWin    Boolean  @default(true)
+  weeklyDigest    Boolean  @default(true)
+  streakReminder  Boolean  @default(true)
+  rewardReady     Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id])
+}
+
+// ============================================================
+// GAMIFICATION — Achievements
+// ============================================================
+
+model Achievement {
+  id           String   @id @default(cuid())
+  key          String   @unique
+  name         String
+  description  String
+  icon         String   @default("🏆")
+  category     String   @default("FOCUS") // FOCUS | STREAK | SOCIAL | MILESTONE
+  threshold    Int      @default(1)
+  metric       String   @default("totalSessions") // totalSessions | totalFocusHours | bestStreak | streak
+  color        String   @default("emerald")
+  createdAt    DateTime @default(now())
+
+  userAchievements UserAchievement[]
+}
+
+model UserAchievement {
+  id            String   @id @default(cuid())
+  userId        String
+  achievementId String
+  unlockedAt    DateTime @default(now())
+
+  user          User         @relation(fields: [userId], references: [id])
+  achievement   Achievement  @relation(fields: [achievementId], references: [id])
+
+  @@unique([userId, achievementId])
+  @@index([userId])
+}
+
+// ============================================================
+// SCHEDULER
+// ============================================================
+
+model ScheduledJob {
+  id           String    @id @default(cuid())
+  type         String    // CHALLENGE_ACTIVATE | CHALLENGE_CLOSE | STATS_REFRESH | STREAK_RESET | NOTIF_CLEANUP
+  entityId     String
+  scheduledFor DateTime
+  status       String    @default("PENDING") // PENDING | RUNNING | COMPLETED | FAILED
+  attempts     Int       @default(0)
+  lastError    String    @default("")
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([status, scheduledFor])
+  @@index([type, entityId])
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String
+  message     String
+  type        String   @default("INFO") // INFO | SUCCESS | WARNING | CHALLENGE | REWARD | ACHIEVEMENT
+  read        Boolean  @default(false)
+  channel     String   @default("IN_APP") // IN_APP | EMAIL | PUSH
+  status      String   @default("DELIVERED") // QUEUED | SENT | DELIVERED | FAILED
+  retryCount  Int      @default(0)
+  lastError   String   @default("")
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ============================================================
+// PLATFORM (Super Admin)
+// ============================================================
+
+model FeatureFlag {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String   @default("")
+  enabled     Boolean  @default(false)
+  scope       String   @default("GLOBAL") // GLOBAL | COMPANY
+  companyId   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([key])
+  @@index([companyId])
+}
+
+model PlatformAnnouncement {
+  id          String   @id @default(cuid())
+  title       String
+  message     String
+  type        String   @default("INFO") // INFO | WARNING | MAINTENANCE
+  active      Boolean  @default(true)
+  dismissible Boolean  @default(true)
+  startsAt    DateTime @default(now())
+  endsAt      DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([active])
+  @@index([startsAt, endsAt])
 }

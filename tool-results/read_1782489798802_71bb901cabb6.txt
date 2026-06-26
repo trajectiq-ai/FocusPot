@@ -1,0 +1,1102 @@
+     1→'use client'
+     2→
+     3→// Company Admin → Employees tab
+     4→// PRIVACY SHIELD: This tab shows DIRECTORY info only (name, email, title,
+     5→// team, role, active status, joined date). It NEVER shows focus hours,
+     6→// sessions, streaks, or points — those stay private to each employee.
+     7→
+     8→import { useCallback, useEffect, useMemo, useState } from 'react'
+     9→import { format } from 'date-fns'
+    10→import { toast } from 'sonner'
+    11→import {
+    12→  Plus,
+    13→  Search,
+    14→  MoreVertical,
+    15→  Pencil,
+    16→  Trash2,
+    17→  UserCog,
+    18→  ShieldCheck,
+    19→  Lock,
+    20→  Loader2,
+    21→  Users,
+    22→  Copy,
+    23→  Check,
+    24→  UserMinus,
+    25→  UserCheck,
+    26→  AlertTriangle,
+    27→  Mail,
+    28→} from 'lucide-react'
+    29→import { Card, CardContent } from '@/components/ui/card'
+    30→import { Button } from '@/components/ui/button'
+    31→import { Badge } from '@/components/ui/badge'
+    32→import { Input } from '@/components/ui/input'
+    33→import { Label } from '@/components/ui/label'
+    34→import { Progress } from '@/components/ui/progress'
+    35→import {
+    36→  Table,
+    37→  TableBody,
+    38→  TableCell,
+    39→  TableHead,
+    40→  TableHeader,
+    41→  TableRow,
+    42→} from '@/components/ui/table'
+    43→import {
+    44→  Dialog,
+    45→  DialogContent,
+    46→  DialogDescription,
+    47→  DialogFooter,
+    48→  DialogHeader,
+    49→  DialogTitle,
+    50→} from '@/components/ui/dialog'
+    51→import {
+    52→  AlertDialog,
+    53→  AlertDialogAction,
+    54→  AlertDialogCancel,
+    55→  AlertDialogContent,
+    56→  AlertDialogDescription,
+    57→  AlertDialogFooter,
+    58→  AlertDialogHeader,
+    59→  AlertDialogTitle,
+    60→} from '@/components/ui/alert-dialog'
+    61→import {
+    62→  DropdownMenu,
+    63→  DropdownMenuContent,
+    64→  DropdownMenuItem,
+    65→  DropdownMenuSeparator,
+    66→  DropdownMenuTrigger,
+    67→} from '@/components/ui/dropdown-menu'
+    68→import {
+    69→  Select,
+    70→  SelectContent,
+    71→  SelectItem,
+    72→  SelectTrigger,
+    73→  SelectValue,
+    74→} from '@/components/ui/select'
+    75→import { getColor, getInitials } from '@/lib/colors'
+    76→import { useAuthStore } from '@/lib/store'
+    77→import type {
+    78→  EmployeeDirectoryItem,
+    79→  EmployeesResponse,
+    80→  TeamManageItem,
+    81→} from './types'
+    82→
+    83→type AddEmployeeResult = {
+    84→  employee: {
+    85→    id: string
+    86→    name: string
+    87→    email: string
+    88→    title: string
+    89→    role: string
+    90→    avatarColor: string
+    91→    teamId: string | null
+    92→    tempPassword: string
+    93→  }
+    94→}
+    95→
+    96→export function EmployeesTab({
+    97→  onRefresh,
+    98→  adminId,
+    99→}: {
+   100→  onRefresh: () => void
+   101→  adminId: string
+   102→}) {
+   103→  const { user } = useAuthStore()
+   104→  const [data, setData] = useState<EmployeesResponse | null>(null)
+   105→  const [teams, setTeams] = useState<TeamManageItem[]>([])
+   106→  const [loading, setLoading] = useState(true)
+   107→  const [error, setError] = useState<string | null>(null)
+   108→
+   109→  const [search, setSearch] = useState('')
+   110→  const [teamFilter, setTeamFilter] = useState<string>('all')
+   111→
+   112→  // Dialogs
+   113→  const [addOpen, setAddOpen] = useState(false)
+   114→  const [editOpen, setEditOpen] = useState(false)
+   115→  const [changeTeamOpen, setChangeTeamOpen] = useState(false)
+   116→  const [removeOpen, setRemoveOpen] = useState(false)
+   117→  const [activeEmployee, setActiveEmployee] = useState<EmployeeDirectoryItem | null>(null)
+   118→  const [tempPasswordInfo, setTempPasswordInfo] = useState<{ name: string; email: string; password: string } | null>(null)
+   119→
+   120→  const fetchData = useCallback(async () => {
+   121→    setError(null)
+   122→    try {
+   123→      const [empRes, teamsRes] = await Promise.all([
+   124→        fetch('/api/admin/employees', { cache: 'no-store' }),
+   125→        fetch('/api/admin/teams', { cache: 'no-store' }),
+   126→      ])
+   127→      if (!empRes.ok) {
+   128→        const j = await empRes.json().catch(() => ({}))
+   129→        throw new Error(j.error || `Failed (${empRes.status})`)
+   130→      }
+   131→      const empJson = (await empRes.json()) as EmployeesResponse
+   132→      setData(empJson)
+   133→      if (teamsRes.ok) {
+   134→        const tJson = await teamsRes.json()
+   135→        setTeams(tJson.teams || [])
+   136→      }
+   137→    } catch (e) {
+   138→      setError(e instanceof Error ? e.message : 'Failed to load employees')
+   139→    } finally {
+   140→      setLoading(false)
+   141→    }
+   142→  }, [])
+   143→
+   144→  useEffect(() => {
+   145→    fetchData()
+   146→  }, [fetchData])
+   147→
+   148→  const filtered = useMemo(() => {
+   149→    if (!data) return []
+   150→    return data.employees.filter((e) => {
+   151→      const matchesSearch =
+   152→        !search ||
+   153→        e.name.toLowerCase().includes(search.toLowerCase()) ||
+   154→        e.email.toLowerCase().includes(search.toLowerCase()) ||
+   155→        (e.title || '').toLowerCase().includes(search.toLowerCase())
+   156→      const matchesTeam = teamFilter === 'all' || e.teamId === teamFilter
+   157→      return matchesSearch && matchesTeam
+   158→    })
+   159→  }, [data, search, teamFilter])
+   160→
+   161→  const seatsPct = data
+   162→    ? Math.min(100, data.seats > 0 ? Math.round((data.employeeCount / data.seats) * 100) : 0)
+   163→    : 0
+   164→  const seatsLeft = data ? data.seats - data.employeeCount : 0
+   165→
+   166→  const handleAdded = (result: AddEmployeeResult) => {
+   167→    setAddOpen(false)
+   168→    setTempPasswordInfo({
+   169→      name: result.employee.name,
+   170→      email: result.employee.email,
+   171→      password: result.employee.tempPassword,
+   172→    })
+   173→    fetchData()
+   174→    onRefresh()
+   175→    toast.success('Employee added')
+   176→  }
+   177→
+   178→  const handleEdit = (emp: EmployeeDirectoryItem) => {
+   179→    setActiveEmployee(emp)
+   180→    setEditOpen(true)
+   181→  }
+   182→  const handleChangeTeam = (emp: EmployeeDirectoryItem) => {
+   183→    setActiveEmployee(emp)
+   184→    setChangeTeamOpen(true)
+   185→  }
+   186→  const handleRemove = (emp: EmployeeDirectoryItem) => {
+   187→    setActiveEmployee(emp)
+   188→    setRemoveOpen(true)
+   189→  }
+   190→
+   191→  const handleToggleActive = async (emp: EmployeeDirectoryItem) => {
+   192→    const next = !emp.active
+   193→    try {
+   194→      const res = await fetch(`/api/admin/employees/${emp.id}`, {
+   195→        method: 'PATCH',
+   196→        headers: { 'Content-Type': 'application/json' },
+   197→        body: JSON.stringify({ active: next }),
+   198→      })
+   199→      const j = await res.json().catch(() => ({}))
+   200→      if (!res.ok) throw new Error(j.error || 'Failed to update')
+   201→      toast.success(next ? 'Employee reactivated' : 'Employee deactivated')
+   202→      fetchData()
+   203→      onRefresh()
+   204→    } catch (e) {
+   205→      toast.error(e instanceof Error ? e.message : 'Failed to update employee')
+   206→    }
+   207→  }
+   208→
+   209→  return (
+   210→    <div className="space-y-6">
+   211→      {/* Privacy Shield header */}
+   212→      <div className="flex items-start gap-2.5 p-4 rounded-xl border border-emerald-200/70 dark:border-emerald-800/50 bg-emerald-50/60 dark:bg-emerald-950/20">
+   213→        <Lock className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0" />
+   214→        <div className="text-sm">
+   215→          <p className="font-semibold text-emerald-900 dark:text-emerald-100">
+   216→            Directory only — focus data stays private
+   217→          </p>
+   218→          <p className="text-xs text-emerald-800/80 dark:text-emerald-200/70 mt-0.5">
+   219→            This view shows names, emails, titles, teams, and status only. Individual focus hours,
+   220→            sessions, streaks, and points are never visible to admins.
+   221→          </p>
+   222→        </div>
+   223→      </div>
+   224→
+   225→      {/* Header / actions */}
+   226→      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+   227→        <div>
+   228→          <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
+   229→            <Users className="w-5 h-5 text-violet-500" /> Employee Directory
+   230→          </h2>
+   231→          <p className="text-sm text-muted-foreground mt-0.5">
+   232→            Add, edit, and manage your team members.
+   233→          </p>
+   234→        </div>
+   235→        <Button
+   236→          onClick={() => setAddOpen(true)}
+   237→          className="bg-emerald-600 hover:bg-emerald-700"
+   238→          disabled={!data || seatsLeft <= 0}
+   239→        >
+   240→          <Plus className="w-4 h-4" /> Add Employee
+   241→        </Button>
+   242→      </div>
+   243→
+   244→      {/* Seats progress */}
+   245→      {data && (
+   246→        <Card>
+   247→          <CardContent className="p-4 sm:p-6">
+   248→            <div className="flex items-center justify-between flex-wrap gap-2">
+   249→              <div>
+   250→                <p className="text-sm font-semibold">Seats used</p>
+   251→                <p className="text-xs text-muted-foreground">
+   252→                  {data.employeeCount} active employee{data.employeeCount === 1 ? '' : 's'} of{' '}
+   253→                  {data.seats} seats on your plan
+   254→                </p>
+   255→              </div>
+   256→              <div className="text-right">
+   257→                <p className="text-2xl font-bold tabular-nums">
+   258→                  {data.employeeCount}
+   259→                  <span className="text-base text-muted-foreground font-normal"> / {data.seats}</span>
+   260→                </p>
+   261→                <p className="text-xs text-muted-foreground">{seatsLeft} available</p>
+   262→              </div>
+   263→            </div>
+   264→            <Progress
+   265→              value={seatsPct}
+   266→              className="h-2 mt-3"
+   267→            />
+   268→            {seatsLeft <= 2 && seatsLeft > 0 && (
+   269→              <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 flex items-center gap-1.5">
+   270→                <AlertTriangle className="w-3.5 h-3.5" />
+   271→                You&apos;re almost out of seats. Only {seatsLeft} left.
+   272→              </p>
+   273→            )}
+   274→            {seatsLeft <= 0 && (
+   275→              <p className="text-xs text-rose-600 dark:text-rose-400 mt-2 flex items-center gap-1.5">
+   276→                <AlertTriangle className="w-3.5 h-3.5" />
+   277→                Seat limit reached. Upgrade your plan in Settings to add more employees.
+   278→              </p>
+   279→            )}
+   280→          </CardContent>
+   281→        </Card>
+   282→      )}
+   283→
+   284→      {/* Search / filter */}
+   285→      <div className="flex flex-col sm:flex-row gap-2">
+   286→        <div className="relative flex-1">
+   287→          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+   288→          <Input
+   289→            placeholder="Search by name, email, or title…"
+   290→            value={search}
+   291→            onChange={(e) => setSearch(e.target.value)}
+   292→            className="pl-9"
+   293→          />
+   294→        </div>
+   295→        <Select value={teamFilter} onValueChange={setTeamFilter}>
+   296→          <SelectTrigger className="w-full sm:w-56">
+   297→            <SelectValue placeholder="Filter by team" />
+   298→          </SelectTrigger>
+   299→          <SelectContent>
+   300→            <SelectItem value="all">All teams</SelectItem>
+   301→            {teams.map((t) => (
+   302→              <SelectItem key={t.id} value={t.id}>
+   303→                <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${getColor(t.color).dot}`} />
+   304→                {t.name}
+   305→              </SelectItem>
+   306→            ))}
+   307→          </SelectContent>
+   308→        </Select>
+   309→      </div>
+   310→
+   311→      {/* Body */}
+   312→      {loading ? (
+   313→        <Card>
+   314→          <CardContent className="py-12 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+   315→            <Loader2 className="w-4 h-4 animate-spin" /> Loading directory…
+   316→          </CardContent>
+   317→        </Card>
+   318→      ) : error ? (
+   319→        <Card className="border-rose-200 dark:border-rose-800/50">
+   320→          <CardContent className="py-10 text-center">
+   321→            <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p>
+   322→            <Button variant="outline" size="sm" className="mt-3" onClick={fetchData}>
+   323→              Try again
+   324→            </Button>
+   325→          </CardContent>
+   326→        </Card>
+   327→      ) : filtered.length === 0 ? (
+   328→        <Card className="border-dashed">
+   329→          <CardContent className="py-12 text-center">
+   330→            <Users className="w-10 h-10 mx-auto text-muted-foreground/50 mb-2" />
+   331→            <p className="text-sm font-medium">No employees match your filters</p>
+   332→            <p className="text-xs text-muted-foreground mt-1">
+   333→              Try clearing the search or team filter.
+   334→            </p>
+   335→          </CardContent>
+   336→        </Card>
+   337→      ) : (
+   338→        <>
+   339→          {/* Desktop table */}
+   340→          <Card className="hidden md:block">
+   341→            <CardContent className="p-0">
+   342→              <div className="max-h-[32rem] overflow-y-auto scrollbar-thin">
+   343→                <Table>
+   344→                  <TableHeader className="sticky top-0 bg-card z-10">
+   345→                    <TableRow>
+   346→                      <TableHead className="pl-6">Employee</TableHead>
+   347→                      <TableHead>Title</TableHead>
+   348→                      <TableHead>Team</TableHead>
+   349→                      <TableHead>Status</TableHead>
+   350→                      <TableHead>Joined</TableHead>
+   351→                      <TableHead className="pr-6 text-right">Actions</TableHead>
+   352→                    </TableRow>
+   353→                  </TableHeader>
+   354→                  <TableBody>
+   355→                    {filtered.map((emp) => (
+   356→                      <EmployeeRow
+   357→                        key={emp.id}
+   358→                        emp={emp}
+   359→                        isSelf={emp.id === (user?.id || adminId)}
+   360→                        onEdit={() => handleEdit(emp)}
+   361→                        onChangeTeam={() => handleChangeTeam(emp)}
+   362→                        onToggleActive={() => handleToggleActive(emp)}
+   363→                        onRemove={() => handleRemove(emp)}
+   364→                      />
+   365→                    ))}
+   366→                  </TableBody>
+   367→                </Table>
+   368→              </div>
+   369→            </CardContent>
+   370→          </Card>
+   371→
+   372→          {/* Mobile cards */}
+   373→          <div className="md:hidden grid grid-cols-1 gap-3">
+   374→            {filtered.map((emp) => (
+   375→              <EmployeeMobileCard
+   376→                key={emp.id}
+   377→                emp={emp}
+   378→                isSelf={emp.id === (user?.id || adminId)}
+   379→                onEdit={() => handleEdit(emp)}
+   380→                onChangeTeam={() => handleChangeTeam(emp)}
+   381→                onToggleActive={() => handleToggleActive(emp)}
+   382→                onRemove={() => handleRemove(emp)}
+   383→              />
+   384→            ))}
+   385→          </div>
+   386→        </>
+   387→      )}
+   388→
+   389→      {/* Add Employee dialog */}
+   390→      <AddEmployeeDialog
+   391→        open={addOpen}
+   392→        onOpenChange={setAddOpen}
+   393→        teams={teams}
+   394→        onAdded={handleAdded}
+   395→      />
+   396→
+   397→      {/* Edit details dialog */}
+   398→      {activeEmployee && (
+   399→        <EditEmployeeDialog
+   400→          open={editOpen}
+   401→          onOpenChange={setEditOpen}
+   402→          employee={activeEmployee}
+   403→          isSelf={activeEmployee.id === (user?.id || adminId)}
+   404→          onSaved={() => {
+   405→            setEditOpen(false)
+   406→            fetchData()
+   407→            onRefresh()
+   408→          }}
+   409→        />
+   410→      )}
+   411→
+   412→      {/* Change team dialog */}
+   413→      {activeEmployee && (
+   414→        <ChangeTeamDialog
+   415→          open={changeTeamOpen}
+   416→          onOpenChange={setChangeTeamOpen}
+   417→          employee={activeEmployee}
+   418→          teams={teams}
+   419→          onSaved={() => {
+   420→            setChangeTeamOpen(false)
+   421→            fetchData()
+   422→            onRefresh()
+   423→          }}
+   424→        />
+   425→      )}
+   426→
+   427→      {/* Remove confirm */}
+   428→      <AlertDialog open={removeOpen} onOpenChange={setRemoveOpen}>
+   429→        <AlertDialogContent>
+   430→          <AlertDialogHeader>
+   431→            <AlertDialogTitle className="flex items-center gap-2">
+   432→              <Trash2 className="w-5 h-5 text-rose-500" /> Remove employee?
+   433→            </AlertDialogTitle>
+   434→            <AlertDialogDescription>
+   435→              This permanently deletes{' '}
+   436→              <span className="font-semibold text-foreground">{activeEmployee?.name}</span> (
+   437→              {activeEmployee?.email}) and all of their focus sessions and notifications. This
+   438→              action cannot be undone.
+   439→            </AlertDialogDescription>
+   440→          </AlertDialogHeader>
+   441→          <AlertDialogFooter>
+   442→            <AlertDialogCancel>Cancel</AlertDialogCancel>
+   443→            <AlertDialogAction
+   444→              className="bg-rose-600 hover:bg-rose-700 text-white"
+   445→              onClick={async (e) => {
+   446→                e.preventDefault()
+   447→                if (!activeEmployee) return
+   448→                try {
+   449→                  const res = await fetch(`/api/admin/employees/${activeEmployee.id}`, {
+   450→                    method: 'DELETE',
+   451→                  })
+   452→                  const j = await res.json().catch(() => ({}))
+   453→                  if (!res.ok) throw new Error(j.error || 'Failed to remove')
+   454→                  toast.success('Employee removed')
+   455→                  setRemoveOpen(false)
+   456→                  fetchData()
+   457→                  onRefresh()
+   458→                } catch (err) {
+   459→                  toast.error(err instanceof Error ? err.message : 'Failed to remove employee')
+   460→                }
+   461→              }}
+   462→            >
+   463→              <Trash2 className="w-4 h-4" /> Remove permanently
+   464→            </AlertDialogAction>
+   465→          </AlertDialogFooter>
+   466→        </AlertDialogContent>
+   467→      </AlertDialog>
+   468→
+   469→      {/* Temp password success dialog */}
+   470→      <TempPasswordDialog
+   471→        key={tempPasswordInfo?.password || 'empty'}
+   472→        info={tempPasswordInfo}
+   473→        onClose={() => setTempPasswordInfo(null)}
+   474→      />
+   475→    </div>
+   476→  )
+   477→}
+   478→
+   479→function EmployeeRow({
+   480→  emp,
+   481→  isSelf,
+   482→  onEdit,
+   483→  onChangeTeam,
+   484→  onToggleActive,
+   485→  onRemove,
+   486→}: {
+   487→  emp: EmployeeDirectoryItem
+   488→  isSelf: boolean
+   489→  onEdit: () => void
+   490→  onChangeTeam: () => void
+   491→  onToggleActive: () => void
+   492→  onRemove: () => void
+   493→}) {
+   494→  const c = getColor(emp.avatarColor || 'violet')
+   495→  const team = emp.team
+   496→  const teamColor = team ? getColor(team.color) : null
+   497→
+   498→  return (
+   499→    <TableRow className={isSelf ? 'bg-violet-50/40 dark:bg-violet-950/15' : ''}>
+   500→      <TableCell className="pl-6">
+   501→        <div className="flex items-center gap-3 min-w-0">
+   502→          <div
+   503→            className={`shrink-0 w-9 h-9 rounded-full bg-gradient-to-br ${c.gradient} text-white flex items-center justify-center text-xs font-semibold`}
+   504→          >
+   505→            {getInitials(emp.name)}
+   506→          </div>
+   507→          <div className="min-w-0">
+   508→            <p className="font-medium truncate flex items-center gap-1.5">
+   509→              {emp.name}
+   510→              {isSelf && (
+   511→                <Badge className="bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300 text-[10px] px-1.5 py-0">
+   512→                  You
+   513→                </Badge>
+   514→              )}
+   515→              {emp.role === 'COMPANY_ADMIN' && (
+   516→                <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 text-[10px] px-1.5 py-0">
+   517→                  Admin
+   518→                </Badge>
+   519→              )}
+   520→            </p>
+   521→            <p className="text-xs text-muted-foreground truncate">{emp.email}</p>
+   522→          </div>
+   523→        </div>
+   524→      </TableCell>
+   525→      <TableCell>
+   526→        <span className="text-sm">{emp.title || <span className="text-muted-foreground">—</span>}</span>
+   527→      </TableCell>
+   528→      <TableCell>
+   529→        {team ? (
+   530→          <Badge variant="outline" className="gap-1.5">
+   531→            <span className={`w-2 h-2 rounded-full ${teamColor?.dot}`} />
+   532→            {team.name}
+   533→          </Badge>
+   534→        ) : (
+   535→          <span className="text-xs text-muted-foreground">No team</span>
+   536→        )}
+   537→      </TableCell>
+   538→      <TableCell>
+   539→        {emp.active ? (
+   540→          <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+   541→            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1" /> Active
+   542→          </Badge>
+   543→        ) : (
+   544→          <Badge className="bg-muted text-muted-foreground">
+   545→            <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground mr-1" /> Inactive
+   546→          </Badge>
+   547→        )}
+   548→      </TableCell>
+   549→      <TableCell className="text-sm text-muted-foreground tabular-nums">
+   550→        {format(new Date(emp.createdAt), 'MMM d, yyyy')}
+   551→      </TableCell>
+   552→      <TableCell className="pr-6 text-right">
+   553→        <DropdownMenu>
+   554→          <DropdownMenuTrigger asChild>
+   555→            <Button variant="ghost" size="icon" className="h-8 w-8">
+   556→              <MoreVertical className="w-4 h-4" />
+   557→            </Button>
+   558→          </DropdownMenuTrigger>
+   559→          <DropdownMenuContent align="end" className="w-48">
+   560→            <DropdownMenuItem onClick={onEdit}>
+   561→              <Pencil className="w-4 h-4" /> Edit details
+   562→            </DropdownMenuItem>
+   563→            <DropdownMenuItem onClick={onChangeTeam} disabled={isSelf}>
+   564→              <UserCog className="w-4 h-4" /> Change team
+   565→            </DropdownMenuItem>
+   566→            <DropdownMenuItem
+   567→              onClick={onToggleActive}
+   568→              disabled={isSelf}
+   569→            >
+   570→              {emp.active ? (
+   571→                <>
+   572→                  <UserMinus className="w-4 h-4" /> Deactivate
+   573→                </>
+   574→              ) : (
+   575→                <>
+   576→                  <UserCheck className="w-4 h-4" /> Reactivate
+   577→                </>
+   578→              )}
+   579→            </DropdownMenuItem>
+   580→            <DropdownMenuSeparator />
+   581→            <DropdownMenuItem
+   582→              variant="destructive"
+   583→              onClick={onRemove}
+   584→              disabled={isSelf}
+   585→            >
+   586→              <Trash2 className="w-4 h-4" /> Remove
+   587→            </DropdownMenuItem>
+   588→          </DropdownMenuContent>
+   589→        </DropdownMenu>
+   590→      </TableCell>
+   591→    </TableRow>
+   592→  )
+   593→}
+   594→
+   595→function EmployeeMobileCard({
+   596→  emp,
+   597→  isSelf,
+   598→  onEdit,
+   599→  onChangeTeam,
+   600→  onToggleActive,
+   601→  onRemove,
+   602→}: {
+   603→  emp: EmployeeDirectoryItem
+   604→  isSelf: boolean
+   605→  onEdit: () => void
+   606→  onChangeTeam: () => void
+   607→  onToggleActive: () => void
+   608→  onRemove: () => void
+   609→}) {
+   610→  const c = getColor(emp.avatarColor || 'violet')
+   611→  const team = emp.team
+   612→  const teamColor = team ? getColor(team.color) : null
+   613→
+   614→  return (
+   615→    <Card className={isSelf ? 'border-violet-200 dark:border-violet-800/50' : ''}>
+   616→      <CardContent className="p-4">
+   617→        <div className="flex items-start gap-3">
+   618→          <div
+   619→            className={`shrink-0 w-10 h-10 rounded-full bg-gradient-to-br ${c.gradient} text-white flex items-center justify-center text-sm font-semibold`}
+   620→          >
+   621→            {getInitials(emp.name)}
+   622→          </div>
+   623→          <div className="min-w-0 flex-1">
+   624→            <div className="flex items-center gap-1.5 flex-wrap">
+   625→              <p className="font-medium truncate">{emp.name}</p>
+   626→              {isSelf && (
+   627→                <Badge className="bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300 text-[10px] px-1.5 py-0">
+   628→                  You
+   629→                </Badge>
+   630→              )}
+   631→              {emp.role === 'COMPANY_ADMIN' && (
+   632→                <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 text-[10px] px-1.5 py-0">
+   633→                  Admin
+   634→                </Badge>
+   635→              )}
+   636→            </div>
+   637→            <p className="text-xs text-muted-foreground truncate flex items-center gap-1 mt-0.5">
+   638→              <Mail className="w-3 h-3" /> {emp.email}
+   639→            </p>
+   640→            <div className="flex items-center gap-2 flex-wrap mt-2">
+   641→              {emp.title && (
+   642→                <span className="text-xs text-muted-foreground">{emp.title}</span>
+   643→              )}
+   644→              {team && (
+   645→                <Badge variant="outline" className="gap-1.5 text-[10px]">
+   646→                  <span className={`w-2 h-2 rounded-full ${teamColor?.dot}`} />
+   647→                  {team.name}
+   648→                </Badge>
+   649→              )}
+   650→              {emp.active ? (
+   651→                <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 text-[10px]">
+   652→                  Active
+   653→                </Badge>
+   654→              ) : (
+   655→                <Badge className="bg-muted text-muted-foreground text-[10px]">Inactive</Badge>
+   656→              )}
+   657→            </div>
+   658→            <p className="text-[10px] text-muted-foreground mt-1.5">
+   659→              Joined {format(new Date(emp.createdAt), 'MMM d, yyyy')}
+   660→            </p>
+   661→          </div>
+   662→          <DropdownMenu>
+   663→            <DropdownMenuTrigger asChild>
+   664→              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+   665→                <MoreVertical className="w-4 h-4" />
+   666→              </Button>
+   667→            </DropdownMenuTrigger>
+   668→            <DropdownMenuContent align="end" className="w-48">
+   669→              <DropdownMenuItem onClick={onEdit}>
+   670→                <Pencil className="w-4 h-4" /> Edit details
+   671→              </DropdownMenuItem>
+   672→              <DropdownMenuItem onClick={onChangeTeam} disabled={isSelf}>
+   673→                <UserCog className="w-4 h-4" /> Change team
+   674→              </DropdownMenuItem>
+   675→              <DropdownMenuItem onClick={onToggleActive} disabled={isSelf}>
+   676→                {emp.active ? (
+   677→                  <>
+   678→                    <UserMinus className="w-4 h-4" /> Deactivate
+   679→                  </>
+   680→                ) : (
+   681→                  <>
+   682→                    <UserCheck className="w-4 h-4" /> Reactivate
+   683→                  </>
+   684→                )}
+   685→              </DropdownMenuItem>
+   686→              <DropdownMenuSeparator />
+   687→              <DropdownMenuItem variant="destructive" onClick={onRemove} disabled={isSelf}>
+   688→                <Trash2 className="w-4 h-4" /> Remove
+   689→              </DropdownMenuItem>
+   690→            </DropdownMenuContent>
+   691→          </DropdownMenu>
+   692→        </div>
+   693→      </CardContent>
+   694→    </Card>
+   695→  )
+   696→}
+   697→
+   698→function AddEmployeeDialog({
+   699→  open,
+   700→  onOpenChange,
+   701→  teams,
+   702→  onAdded,
+   703→}: {
+   704→  open: boolean
+   705→  onOpenChange: (v: boolean) => void
+   706→  teams: TeamManageItem[]
+   707→  onAdded: (result: AddEmployeeResult) => void
+   708→}) {
+   709→  const [name, setName] = useState('')
+   710→  const [email, setEmail] = useState('')
+   711→  const [title, setTitle] = useState('')
+   712→  const [teamId, setTeamId] = useState('')
+   713→  const [submitting, setSubmitting] = useState(false)
+   714→
+   715→  // Reset form when dialog opens
+   716→  useEffect(() => {
+   717→    if (open) {
+   718→      setName('')
+   719→      setEmail('')
+   720→      setTitle('')
+   721→      setTeamId(teams[0]?.id || '')
+   722→    }
+   723→  }, [open, teams])
+   724→
+   725→  const submit = async () => {
+   726→    if (!name.trim()) return toast.error('Please enter a name')
+   727→    if (!email.trim()) return toast.error('Please enter an email')
+   728→    if (!teamId) return toast.error('Please select a team')
+   729→
+   730→    setSubmitting(true)
+   731→    try {
+   732→      const res = await fetch('/api/admin/employees', {
+   733→        method: 'POST',
+   734→        headers: { 'Content-Type': 'application/json' },
+   735→        body: JSON.stringify({
+   736→          name: name.trim(),
+   737→          email: email.trim(),
+   738→          title: title.trim(),
+   739→          teamId,
+   740→        }),
+   741→      })
+   742→      const j = await res.json().catch(() => ({}))
+   743→      if (!res.ok) throw new Error(j.error || 'Failed to add employee')
+   744→      onAdded(j as AddEmployeeResult)
+   745→    } catch (e) {
+   746→      toast.error(e instanceof Error ? e.message : 'Failed to add employee')
+   747→    } finally {
+   748→      setSubmitting(false)
+   749→    }
+   750→  }
+   751→
+   752→  return (
+   753→    <Dialog open={open} onOpenChange={onOpenChange}>
+   754→      <DialogContent className="sm:max-w-md">
+   755→        <DialogHeader>
+   756→          <DialogTitle className="flex items-center gap-2">
+   757→            <span className="w-8 h-8 rounded-lg bg-violet-100 dark:bg-violet-950/50 text-violet-600 dark:text-violet-400 flex items-center justify-center">
+   758→              <Plus className="w-4 h-4" />
+   759→            </span>
+   760→            Add Employee
+   761→          </DialogTitle>
+   762→          <DialogDescription>
+   763→            Invite a new team member. A temporary password will be generated for them to use on
+   764→            first sign-in.
+   765→          </DialogDescription>
+   766→        </DialogHeader>
+   767→
+   768→        <div className="space-y-3">
+   769→          <div className="space-y-1.5">
+   770→            <Label htmlFor="emp-name">Full name</Label>
+   771→            <Input
+   772→              id="emp-name"
+   773→              placeholder="e.g. Jordan Rivera"
+   774→              value={name}
+   775→              onChange={(e) => setName(e.target.value)}
+   776→            />
+   777→          </div>
+   778→          <div className="space-y-1.5">
+   779→            <Label htmlFor="emp-email">Email</Label>
+   780→            <Input
+   781→              id="emp-email"
+   782→              type="email"
+   783→              placeholder="jordan@yourcompany.com"
+   784→              value={email}
+   785→              onChange={(e) => setEmail(e.target.value)}
+   786→            />
+   787→          </div>
+   788→          <div className="space-y-1.5">
+   789→            <Label htmlFor="emp-title">Job title</Label>
+   790→            <Input
+   791→              id="emp-title"
+   792→              placeholder="e.g. Senior Designer"
+   793→              value={title}
+   794→              onChange={(e) => setTitle(e.target.value)}
+   795→            />
+   796→          </div>
+   797→          <div className="space-y-1.5">
+   798→            <Label htmlFor="emp-team">Team</Label>
+   799→            <Select value={teamId} onValueChange={setTeamId}>
+   800→              <SelectTrigger id="emp-team" className="w-full">
+   801→                <SelectValue placeholder="Select a team" />
+   802→              </SelectTrigger>
+   803→              <SelectContent>
+   804→                {teams.map((t) => (
+   805→                  <SelectItem key={t.id} value={t.id}>
+   806→                    <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${getColor(t.color).dot}`} />
+   807→                    {t.name}
+   808→                  </SelectItem>
+   809→                ))}
+   810→              </SelectContent>
+   811→            </Select>
+   812→          </div>
+   813→        </div>
+   814→
+   815→        <DialogFooter>
+   816→          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+   817→            Cancel
+   818→          </Button>
+   819→          <Button
+   820→            onClick={submit}
+   821→            disabled={submitting || teams.length === 0}
+   822→            className="bg-emerald-600 hover:bg-emerald-700"
+   823→          >
+   824→            {submitting ? (
+   825→              <>
+   826→                <Loader2 className="w-4 h-4 animate-spin" /> Adding…
+   827→              </>
+   828→            ) : (
+   829→              <>
+   830→                <Plus className="w-4 h-4" /> Add Employee
+   831→              </>
+   832→            )}
+   833→          </Button>
+   834→        </DialogFooter>
+   835→      </DialogContent>
+   836→    </Dialog>
+   837→  )
+   838→}
+   839→
+   840→function EditEmployeeDialog({
+   841→  open,
+   842→  onOpenChange,
+   843→  employee,
+   844→  isSelf,
+   845→  onSaved,
+   846→}: {
+   847→  open: boolean
+   848→  onOpenChange: (v: boolean) => void
+   849→  employee: EmployeeDirectoryItem
+   850→  isSelf: boolean
+   851→  onSaved: () => void
+   852→}) {
+   853→  const [name, setName] = useState(employee.name)
+   854→  const [title, setTitle] = useState(employee.title || '')
+   855→  const [submitting, setSubmitting] = useState(false)
+   856→
+   857→  useEffect(() => {
+   858→    setName(employee.name)
+   859→    setTitle(employee.title || '')
+   860→  }, [employee])
+   861→
+   862→  const submit = async () => {
+   863→    if (!name.trim()) return toast.error('Name cannot be empty')
+   864→    setSubmitting(true)
+   865→    try {
+   866→      const res = await fetch(`/api/admin/employees/${employee.id}`, {
+   867→        method: 'PATCH',
+   868→        headers: { 'Content-Type': 'application/json' },
+   869→        body: JSON.stringify({ name: name.trim(), title: title.trim() }),
+   870→      })
+   871→      const j = await res.json().catch(() => ({}))
+   872→      if (!res.ok) throw new Error(j.error || 'Failed to update')
+   873→      toast.success('Details updated')
+   874→      onSaved()
+   875→    } catch (e) {
+   876→      toast.error(e instanceof Error ? e.message : 'Failed to update')
+   877→    } finally {
+   878→      setSubmitting(false)
+   879→    }
+   880→  }
+   881→
+   882→  return (
+   883→    <Dialog open={open} onOpenChange={onOpenChange}>
+   884→      <DialogContent className="sm:max-w-md">
+   885→        <DialogHeader>
+   886→          <DialogTitle className="flex items-center gap-2">
+   887→            <Pencil className="w-4 h-4 text-muted-foreground" /> Edit details
+   888→          </DialogTitle>
+   889→          <DialogDescription>
+   890→            {isSelf
+   891→              ? 'Editing your own profile. You can only change name and title.'
+   892→              : `Update name and job title for ${employee.name}.`}
+   893→          </DialogDescription>
+   894→        </DialogHeader>
+   895→        <div className="space-y-3">
+   896→          <div className="space-y-1.5">
+   897→            <Label htmlFor="edit-name">Name</Label>
+   898→            <Input id="edit-name" value={name} onChange={(e) => setName(e.target.value)} />
+   899→          </div>
+   900→          <div className="space-y-1.5">
+   901→            <Label htmlFor="edit-title">Job title</Label>
+   902→            <Input
+   903→              id="edit-title"
+   904→              value={title}
+   905→              onChange={(e) => setTitle(e.target.value)}
+   906→              placeholder="e.g. Senior Designer"
+   907→            />
+   908→          </div>
+   909→          <div className="text-xs text-muted-foreground bg-muted/40 rounded-lg p-2.5 flex items-center gap-1.5">
+   910→            <Mail className="w-3.5 h-3.5 shrink-0" />
+   911→            Email: <span className="font-medium text-foreground">{employee.email}</span> (not editable)
+   912→          </div>
+   913→        </div>
+   914→        <DialogFooter>
+   915→          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+   916→            Cancel
+   917→          </Button>
+   918→          <Button onClick={submit} disabled={submitting} className="bg-emerald-600 hover:bg-emerald-700">
+   919→            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+   920→            Save changes
+   921→          </Button>
+   922→        </DialogFooter>
+   923→      </DialogContent>
+   924→    </Dialog>
+   925→  )
+   926→}
+   927→
+   928→function ChangeTeamDialog({
+   929→  open,
+   930→  onOpenChange,
+   931→  employee,
+   932→  teams,
+   933→  onSaved,
+   934→}: {
+   935→  open: boolean
+   936→  onOpenChange: (v: boolean) => void
+   937→  employee: EmployeeDirectoryItem
+   938→  teams: TeamManageItem[]
+   939→  onSaved: () => void
+   940→}) {
+   941→  const [teamId, setTeamId] = useState(employee.teamId || teams[0]?.id || '')
+   942→  const [submitting, setSubmitting] = useState(false)
+   943→
+   944→  useEffect(() => {
+   945→    setTeamId(employee.teamId || teams[0]?.id || '')
+   946→  }, [employee, teams])
+   947→
+   948→  const submit = async () => {
+   949→    if (!teamId) return toast.error('Please select a team')
+   950→    if (teamId === employee.teamId) {
+   951→      onOpenChange(false)
+   952→      return
+   953→    }
+   954→    setSubmitting(true)
+   955→    try {
+   956→      const res = await fetch(`/api/admin/employees/${employee.id}`, {
+   957→        method: 'PATCH',
+   958→        headers: { 'Content-Type': 'application/json' },
+   959→        body: JSON.stringify({ teamId }),
+   960→      })
+   961→      const j = await res.json().catch(() => ({}))
+   962→      if (!res.ok) throw new Error(j.error || 'Failed to update team')
+   963→      toast.success('Team updated')
+   964→      onSaved()
+   965→    } catch (e) {
+   966→      toast.error(e instanceof Error ? e.message : 'Failed to update team')
+   967→    } finally {
+   968→      setSubmitting(false)
+   969→    }
+   970→  }
+   971→
+   972→  return (
+   973→    <Dialog open={open} onOpenChange={onOpenChange}>
+   974→      <DialogContent className="sm:max-w-md">
+   975→        <DialogHeader>
+   976→          <DialogTitle className="flex items-center gap-2">
+   977→            <UserCog className="w-4 h-4 text-muted-foreground" /> Change team
+   978→          </DialogTitle>
+   979→          <DialogDescription>
+   980→            Move <span className="font-medium text-foreground">{employee.name}</span> to a different
+   981→            team.
+   982→          </DialogDescription>
+   983→        </DialogHeader>
+   984→        <div className="space-y-3">
+   985→          <div className="space-y-1.5">
+   986→            <Label htmlFor="ct-team">New team</Label>
+   987→            <Select value={teamId} onValueChange={setTeamId}>
+   988→              <SelectTrigger id="ct-team" className="w-full">
+   989→                <SelectValue placeholder="Select a team" />
+   990→              </SelectTrigger>
+   991→              <SelectContent>
+   992→                {teams.map((t) => (
+   993→                  <SelectItem key={t.id} value={t.id}>
+   994→                    <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${getColor(t.color).dot}`} />
+   995→                    {t.name}
+   996→                  </SelectItem>
+   997→                ))}
+   998→              </SelectContent>
+   999→            </Select>
+  1000→          </div>
+  1001→        </div>
+  1002→        <DialogFooter>
+  1003→          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+  1004→            Cancel
+  1005→          </Button>
+  1006→          <Button onClick={submit} disabled={submitting} className="bg-emerald-600 hover:bg-emerald-700">
+  1007→            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+  1008→            Move to team
+  1009→          </Button>
+  1010→        </DialogFooter>
+  1011→      </DialogContent>
+  1012→    </Dialog>
+  1013→  )
+  1014→}
+  1015→
+  1016→function TempPasswordDialog({
+  1017→  info,
+  1018→  onClose,
+  1019→}: {
+  1020→  info: { name: string; email: string; password: string } | null
+  1021→  onClose: () => void
+  1022→}) {
+  1023→  const [copied, setCopied] = useState(false)
+  1024→
+  1025→  const copy = async (text: string) => {
+  1026→    try {
+  1027→      await navigator.clipboard.writeText(text)
+  1028→      setCopied(true)
+  1029→      setTimeout(() => setCopied(false), 2000)
+  1030→    } catch {
+  1031→      toast.error('Could not copy to clipboard')
+  1032→    }
+  1033→  }
+  1034→
+  1035→  return (
+  1036→    <Dialog open={!!info} onOpenChange={(v) => !v && onClose()}>
+  1037→      <DialogContent className="sm:max-w-md" showCloseButton={false}>
+  1038→        <DialogHeader>
+  1039→          <DialogTitle className="flex items-center gap-2">
+  1040→            <span className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+  1041→              <ShieldCheck className="w-4 h-4" />
+  1042→            </span>
+  1043→            Employee added — share these credentials
+  1044→          </DialogTitle>
+  1045→          <DialogDescription>
+  1046→            A temporary password was generated for{' '}
+  1047→            <span className="font-medium text-foreground">{info?.name}</span>. Show this once and
+  1048→            share it securely — they&apos;ll be asked to change it on first sign-in.
+  1049→          </DialogDescription>
+  1050→        </DialogHeader>
+  1051→
+  1052→        {info && (
+  1053→          <div className="space-y-3">
+  1054→            <div className="space-y-1.5">
+  1055→              <Label className="text-xs text-muted-foreground">Sign-in email</Label>
+  1056→              <div className="flex items-center gap-2">
+  1057→                <Input value={info.email} readOnly className="font-mono text-sm bg-muted/40" />
+  1058→                <Button variant="outline" size="icon" onClick={() => copy(info.email)}>
+  1059→                  <Copy className="w-4 h-4" />
+  1060→                </Button>
+  1061→              </div>
+  1062→            </div>
+  1063→            <div className="space-y-1.5">
+  1064→              <Label className="text-xs text-muted-foreground">Temporary password</Label>
+  1065→              <div className="flex items-center gap-2">
+  1066→                <Input
+  1067→                  value={info.password}
+  1068→                  readOnly
+  1069→                  className="font-mono text-sm bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/50"
+  1070→                />
+  1071→                <Button
+  1072→                  variant="outline"
+  1073→                  size="icon"
+  1074→                  onClick={() => copy(info.password)}
+  1075→                  className={copied ? 'text-emerald-600 border-emerald-300' : ''}
+  1076→                >
+  1077→                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+  1078→                </Button>
+  1079→              </div>
+  1080→            </div>
+  1081→
+  1082→            <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-800/40">
+  1083→              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+  1084→              <p className="text-xs text-amber-900 dark:text-amber-200">
+  1085→                For security, this password won&apos;t be shown again. Send it to{' '}
+  1086→                <span className="font-medium">{info.name}</span> via your company&apos;s secure
+  1087→                channel (1Password, Slack DM, etc.) — not plain email.
+  1088→              </p>
+  1089→            </div>
+  1090→          </div>
+  1091→        )}
+  1092→
+  1093→        <DialogFooter>
+  1094→          <Button onClick={onClose} className="bg-emerald-600 hover:bg-emerald-700">
+  1095→            <Check className="w-4 h-4" /> I&apos;ve shared it securely
+  1096→          </Button>
+  1097→        </DialogFooter>
+  1098→      </DialogContent>
+  1099→    </Dialog>
+  1100→  )
+  1101→}
+  1102→

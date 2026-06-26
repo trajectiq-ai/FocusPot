@@ -2,8 +2,24 @@ import { db } from '../src/lib/db'
 import { hashPassword, generateJoinCode } from '../src/lib/password'
 
 async function main() {
-  // Clean existing data
+  // Clean existing data (all tables)
+  await db.userAchievement.deleteMany()
+  await db.achievement.deleteMany()
+  await db.notificationPreference.deleteMany()
+  await db.platformAnnouncement.deleteMany()
+  await db.featureFlag.deleteMany()
+  await db.scheduledJob.deleteMany()
   await db.notification.deleteMany()
+  await db.invitation.deleteMany()
+  await db.loginHistory.deleteMany()
+  await db.auditLog.deleteMany()
+  await db.companyStatistics.deleteMany()
+  await db.teamStatistics.deleteMany()
+  await db.employeeStatistics.deleteMany()
+  await db.challengeReward.deleteMany()
+  await db.rewardRedemption.deleteMany()
+  await db.reward.deleteMany()
+  await db.companySettings.deleteMany()
   await db.focusSession.deleteMany()
   await db.challenge.deleteMany()
   await db.user.deleteMany()
@@ -236,6 +252,8 @@ async function main() {
       giftCardValue: 100,
       giftCardCode: '',
       status: 'ACTIVE',
+      scoringModel: 'TOTAL_HOURS',
+      scope: 'COMPANY',
     },
   })
 
@@ -252,6 +270,8 @@ async function main() {
       giftCardValue: 100,
       giftCardCode: '',
       status: 'ACTIVE',
+      scoringModel: 'AVG_PER_MEMBER',
+      scope: 'COMPANY',
     },
   })
 
@@ -272,6 +292,8 @@ async function main() {
       giftCardValue: 100,
       giftCardCode: 'GIFT-NORTH-XXXX-2024',
       status: 'COMPLETED',
+      scoringModel: 'TOTAL_HOURS',
+      scope: 'COMPANY',
       winnerTeamId: marketingTeam.id,
     },
   })
@@ -341,6 +363,7 @@ async function main() {
       data: {
         totalFocusHours: Math.round(totalHours * 10) / 10,
         totalPoints,
+        totalSessions: sessionCount,
         streak: streakCount,
         bestStreak: Math.max(streakCount, Math.floor(rng() * 5) + 2),
         lastFocusDate: streakDates.has(todayStr) ? todayStr : streakDates.has(yesterdayStr) ? yesterdayStr : twoDaysAgoStr,
@@ -390,6 +413,112 @@ async function main() {
   console.log('Employee:       any @northwindlabs.com email / demo')
   console.log('---')
   console.log(`Companies: ${companies.length}, Teams: ${teams.length}, Employees: ${employees.length}`)
+
+  // ===== ACHIEVEMENTS =====
+  const achievementDefs = [
+    { key: 'first_focus', name: 'First Steps', description: 'Complete your first focus session', icon: '🌱', category: 'FOCUS', metric: 'totalSessions', threshold: 1, color: 'emerald' },
+    { key: 'sessions_10', name: 'Getting Started', description: 'Complete 10 focus sessions', icon: '⚡', category: 'FOCUS', metric: 'totalSessions', threshold: 10, color: 'amber' },
+    { key: 'sessions_50', name: 'Focus Pro', description: 'Complete 50 focus sessions', icon: '🎯', category: 'FOCUS', metric: 'totalSessions', threshold: 50, color: 'sky' },
+    { key: 'sessions_100', name: 'Centurion', description: 'Complete 100 focus sessions', icon: '💯', category: 'FOCUS', metric: 'totalSessions', threshold: 100, color: 'violet' },
+    { key: 'hours_10', name: 'Deep Diver', description: 'Accumulate 10 total focus hours', icon: '🏊', category: 'FOCUS', metric: 'totalFocusHours', threshold: 10, color: 'sky' },
+    { key: 'hours_50', name: 'Marathon Worker', description: 'Accumulate 50 total focus hours', icon: '🏃', category: 'FOCUS', metric: 'totalFocusHours', threshold: 50, color: 'amber' },
+    { key: 'hours_100', name: 'Century Club', description: 'Accumulate 100 total focus hours', icon: '🏆', category: 'MILESTONE', metric: 'totalFocusHours', threshold: 100, color: 'violet' },
+    { key: 'streak_3', name: 'On Fire', description: 'Maintain a 3-day streak', icon: '🔥', category: 'STREAK', metric: 'streak', threshold: 3, color: 'orange' },
+    { key: 'streak_7', name: 'Week Warrior', description: 'Maintain a 7-day streak', icon: '⚡', category: 'STREAK', metric: 'streak', threshold: 7, color: 'amber' },
+    { key: 'streak_30', name: 'Unstoppable', description: 'Maintain a 30-day streak', icon: '💎', category: 'STREAK', metric: 'streak', threshold: 30, color: 'violet' },
+    { key: 'best_streak_7', name: 'Consistency King', description: 'Achieve a best streak of 7 days', icon: '👑', category: 'STREAK', metric: 'bestStreak', threshold: 7, color: 'rose' },
+    { key: 'best_streak_30', name: 'Iron Will', description: 'Achieve a best streak of 30 days', icon: '🛡️', category: 'STREAK', metric: 'bestStreak', threshold: 30, color: 'sky' },
+  ]
+  await db.achievement.createMany({ data: achievementDefs })
+  console.log(`Created ${achievementDefs.length} achievements`)
+
+  // ===== COMPANY SETTINGS =====
+  await db.companySettings.createMany({
+    data: companies.map((c) => ({
+      companyId: c.id,
+      timezone: 'America/Chicago',
+      workingHoursStart: '09:00',
+      workingHoursEnd: '17:00',
+      workingDays: '1,2,3,4,5',
+      primaryColor: 'emerald',
+      logoText: c.name,
+    })),
+  })
+
+  // ===== REWARDS =====
+  const rewardDefs = [
+    { name: '$100 Team Lunch Gift Card', description: 'Amazon gift card for a team lunch', type: 'GIFT_CARD', value: 10000, provider: 'amazon', inventory: -1, imageColor: 'emerald', companyId: northwind.id },
+    { name: '$50 Coffee Gift Card', description: 'Starbucks gift card', type: 'GIFT_CARD', value: 5000, provider: 'starbucks', inventory: -1, imageColor: 'amber', companyId: northwind.id },
+    { name: 'FocusPot Champion Mug', description: 'Branded ceramic mug for challenge winners', type: 'MERCH', value: 1500, provider: 'custom', inventory: 50, imageColor: 'sky', companyId: northwind.id },
+    { name: 'Extra PTO Day', description: 'One extra paid day off', type: 'EXPERIENCE', value: 0, provider: 'internal', inventory: -1, imageColor: 'violet', companyId: northwind.id },
+    { name: '$25 Bookstore Gift Card', description: 'For the knowledge seekers', type: 'GIFT_CARD', value: 2500, provider: 'amazon', inventory: -1, imageColor: 'rose', companyId: acme.id },
+  ]
+  const rewards = await Promise.all(rewardDefs.map((r) => db.reward.create({ data: r })))
+
+  // Link rewards to challenges
+  await db.challengeReward.create({
+    data: { challengeId: northwindChallenge.id, rewardId: rewards[0].id, tier: 'WINNER', position: 1 },
+  })
+  await db.challengeReward.create({
+    data: { challengeId: northwindChallenge.id, rewardId: rewards[2].id, tier: 'RUNNER_UP', position: 2 },
+  })
+  await db.challengeReward.create({
+    data: { challengeId: pastChallenge.id, rewardId: rewards[0].id, tier: 'WINNER', position: 1 },
+  })
+
+  // ===== FEATURE FLAGS =====
+  await db.featureFlag.createMany({
+    data: [
+      { key: 'rewards_system', name: 'Rewards System', description: 'Enable the rewards catalog and redemption workflow', enabled: true },
+      { key: 'achievements', name: 'Achievements', description: 'Enable gamification achievements', enabled: true },
+      { key: 'csv_import', name: 'CSV Import', description: 'Enable bulk employee import via CSV', enabled: true },
+      { key: 'analytics_dashboard', name: 'Analytics Dashboard', description: 'Enable the analytics tab with persisted statistics', enabled: true },
+      { key: 'recurring_challenges', name: 'Recurring Challenges', description: 'Enable weekly recurring challenge auto-creation', enabled: false },
+      { key: 'maintenance_mode_global', name: 'Global Maintenance Mode', description: 'Put the entire platform in maintenance mode', enabled: false },
+    ],
+  })
+
+  // ===== PLATFORM ANNOUNCEMENTS =====
+  await db.platformAnnouncement.create({
+    data: {
+      title: 'Welcome to FocusPot Enterprise',
+      message: 'New features: Rewards catalog, achievements, analytics, CSV import, and more!',
+      type: 'INFO',
+      active: true,
+      dismissible: true,
+    },
+  })
+
+  // ===== SCHEDULED JOBS =====
+  // Schedule challenge closure for the active challenges
+  await db.scheduledJob.createMany({
+    data: [
+      { type: 'CHALLENGE_CLOSE', entityId: northwindChallenge.id, scheduledFor: friday, status: 'PENDING' },
+      { type: 'CHALLENGE_CLOSE', entityId: acmeChallenge.id, scheduledFor: friday, status: 'PENDING' },
+      { type: 'STATS_REFRESH', entityId: 'all', scheduledFor: new Date(Date.now() + 60 * 60 * 1000), status: 'PENDING' },
+      { type: 'STREAK_RESET', entityId: 'all', scheduledFor: new Date(new Date().setHours(23, 59, 0, 0)), status: 'PENDING' },
+    ],
+  })
+
+  // ===== AWARD EXISTING ACHIEVEMENTS (based on seeded stats) =====
+  const allAchievements = await db.achievement.findMany()
+  const achMap = new Map(allAchievements.map((a) => [a.key, a]))
+  for (const emp of employees) {
+    const fullEmp = await db.user.findUnique({ where: { id: emp.id }, select: { totalSessions: true, totalFocusHours: true, streak: true, bestStreak: true } })
+    if (!fullEmp) continue
+    for (const ach of allAchievements) {
+      const value = (fullEmp as any)[ach.metric] || 0
+      if (value >= ach.threshold) {
+        await db.userAchievement.create({ data: { userId: emp.id, achievementId: ach.id } }).catch(() => {})
+      }
+    }
+  }
+  console.log('Awarded achievements to eligible employees')
+
+  // ===== NOTIFICATION PREFERENCES (defaults for all users) =====
+  await db.notificationPreference.createMany({
+    data: [...employees, ...companyAdmins, superAdmin].map((u) => ({ userId: u.id })),
+  })
 }
 
 main()

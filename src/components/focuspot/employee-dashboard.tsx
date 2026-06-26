@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Timer, Trophy, History as HistoryIcon, Gift } from 'lucide-react'
+import { Timer, Trophy, History as HistoryIcon, Gift, BarChart3, Award } from 'lucide-react'
 import { AppShell, NavButton } from '@/components/focuspot/shared/app-shell'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuthStore } from '@/lib/store'
@@ -11,8 +11,11 @@ import { EmployeeLeaderboard } from './employee/leaderboard'
 import { EmployeeHistory, type SessionEntry } from './employee/history'
 import { EmployeeChallenge } from './employee/challenge'
 import { NotificationsBell, type EmployeeNotification } from './employee/notifications'
+import { AchievementsTab } from './employee/achievements-tab'
+import { StatsTab } from './employee/stats-tab'
+import { RewardsTab } from './employee/rewards-tab'
 
-type Tab = 'timer' | 'leaderboard' | 'history' | 'challenge'
+type Tab = 'timer' | 'leaderboard' | 'history' | 'challenge' | 'achievements' | 'stats' | 'rewards'
 
 type MeResponse = {
   user: {
@@ -159,6 +162,24 @@ export function EmployeeDashboard() {
         icon={Gift}
         label="Challenge"
       />
+      <NavButton
+        active={tab === 'achievements'}
+        onClick={() => setTab('achievements')}
+        icon={Award}
+        label="Achievements"
+      />
+      <NavButton
+        active={tab === 'stats'}
+        onClick={() => setTab('stats')}
+        icon={BarChart3}
+        label="Stats"
+      />
+      <NavButton
+        active={tab === 'rewards'}
+        onClick={() => setTab('rewards')}
+        icon={Gift}
+        label="Rewards"
+      />
     </>
   )
 
@@ -229,6 +250,9 @@ export function EmployeeDashboard() {
                 lastCompleted={me.lastCompleted}
               />
             )}
+            {tab === 'achievements' && <AchievementsTab />}
+            {tab === 'stats' && <StatsTab />}
+            {tab === 'rewards' && <RewardsTab />}
           </>
         )}
       </div>

@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { LayoutDashboard, Building2, Activity, Crown, RefreshCw } from 'lucide-react'
+import {
+  LayoutDashboard,
+  Building2,
+  Activity,
+  Crown,
+  RefreshCw,
+  Flag,
+  Megaphone,
+  ScrollText,
+} from 'lucide-react'
 import { AppShell, NavButton } from '@/components/focuspot/shared/app-shell'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -12,14 +21,21 @@ import type { DashboardData } from './super/types'
 import { OverviewTab } from './super/overview-tab'
 import { CompaniesTab } from './super/companies-tab'
 import { ActivityTab } from './super/activity-tab'
+import { FeatureFlagsTab } from './super/feature-flags-tab'
+import { AnnouncementsTab } from './super/announcements-tab'
+import { AuditLogTab } from './super/audit-log-tab'
+import { GlobalSearch } from './super/global-search'
 import { NotificationsBell } from './super/notifications-bell'
 
-type TabKey = 'overview' | 'companies' | 'activity'
+type TabKey = 'overview' | 'companies' | 'activity' | 'flags' | 'announcements' | 'audit'
 
 const TAB_META: { key: TabKey; label: string; icon: typeof Crown }[] = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
   { key: 'companies', label: 'Companies', icon: Building2 },
   { key: 'activity', label: 'Activity', icon: Activity },
+  { key: 'flags', label: 'Feature Flags', icon: Flag },
+  { key: 'announcements', label: 'Announcements', icon: Megaphone },
+  { key: 'audit', label: 'Audit Log', icon: ScrollText },
 ]
 
 const PAGE_TITLES: Record<TabKey, { title: string; subtitle: string }> = {
@@ -34,6 +50,18 @@ const PAGE_TITLES: Record<TabKey, { title: string; subtitle: string }> = {
   activity: {
     title: 'Platform Activity',
     subtitle: 'Recent challenges and focus engagement across all companies',
+  },
+  flags: {
+    title: 'Feature Flags',
+    subtitle: 'Toggle platform behavior globally or per company',
+  },
+  announcements: {
+    title: 'Announcements',
+    subtitle: 'Broadcast platform-wide messages to every company',
+  },
+  audit: {
+    title: 'Audit Log',
+    subtitle: 'Platform-wide event log across all companies and admins',
   },
 }
 
@@ -107,6 +135,9 @@ export function SuperAdminDashboard() {
             </p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
+            <div className="hidden md:block">
+              <GlobalSearch onNavigateCompanies={() => setTab('companies')} />
+            </div>
             <Button
               variant="outline"
               size="icon"
@@ -145,6 +176,9 @@ export function SuperAdminDashboard() {
                 />
               )}
               {tab === 'activity' && <ActivityTab data={data} />}
+              {tab === 'flags' && <FeatureFlagsTab />}
+              {tab === 'announcements' && <AnnouncementsTab />}
+              {tab === 'audit' && <AuditLogTab />}
             </motion.div>
           </AnimatePresence>
         ) : null}

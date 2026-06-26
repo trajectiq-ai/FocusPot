@@ -402,3 +402,205 @@ Stage Summary:
   - **Super Admin**: company detail view (GET), subscription management (PATCH)
 - Join codes for demo companies: NORTHWIND-7K2M, ACMECORP-3F9P, BRIGHT-5H8X, QUANTUM-2D4T, PIXELCO-9R1W
 - Lint clean, TypeScript clean, no runtime errors
+
+---
+Task ID: E1
+Agent: full-stack-developer (Enterprise APIs)
+Task: Build all enterprise API routes — rewards, company settings, invitations, CSV import/export, employee achievements/stats/preferences, super admin feature flags/announcements/search/audit-log/platform-stats
+
+Work Log:
+- Created 20 API route handlers across 18 files (under src/app/api/):
+  - Rewards: admin/rewards (GET list paginated+filterable by type/active, POST create with audit); admin/rewards/[id] (PATCH update + DELETE with redemption/challenge-link block)
+  - Redemptions: admin/redeemptions (GET list with reward+user+team info, filterable by status/tier/rewardId/challengeId, relation-aware sortBy); admin/redeemptions/[id] (PATCH status+code+notes with auto-fulfilledAt, audit)
+  - Company Settings: admin/company-settings (GET upserts defaults, PATCH timezone/workingHours/workingDays/primaryColor/logoText/holidayCalendar with zod regex validation)
+  - Invitations: admin/invitations (GET list, POST create with unique URL-safe token + 7-day expiry + duplicate/existing-user blocks); admin/invitations/[id] (PATCH revoke/expire, blocks already-accepted)
+  - CSV: admin/employees/import (POST accepting {csv}, minimal RFC 4180 parser, per-row validation, hashed temp passwords, seat-limit enforcement, returns successCount+errors+created+tempPasswords); admin/employees/export (GET returning text/csv with proper escaping, directory-only — NO focus data)
+  - Employee: achievements (GET all achievements + unlocked + progress, grouped by category); stats (GET 30-day daily focus minutes + session calendar + 7×24 heatmap + weekly summary with best day); notification-preferences (GET defaults + PATCH per-flag); rewards (GET user's redemptions + status summary)
+  - Super: feature-flags (GET list with company-info join, POST create with UPPERCASE_SNAKE_CASE validation + scope/companyId consistency); feature-flags/[id] (PATCH toggle + DELETE); announcements (GET list + POST with startsAt<endsAt validation); announcements/[id] (PATCH + DELETE); search (GET ?q=... across companies/users/challenges with grouped response); audit-log (GET platform-wide paginated + filterable); platform-stats (GET totals by status/plan, MRR/ARR, 6-month MRR/companies-created/active-users trends, top 10 companies by focus hours)
+- All mutations use auditLog() with appropriate action/entityType/entityId/companyId/metadata
+- All POST/PATCH routes use zod validation
+- All list endpoints use getQueryParams + paginatedResponse from @/lib/query
+- All admin routes scope by admin.companyId (no cross-company access)
+- Used Next.js 16 async params pattern: { params }: { params: Promise<{ id: string }> } with await params
+- Modified src/lib/notifications.ts: added explicit type annotation to `results` array in sendNotifications() to fix pre-existing TS error (evolving arrays don't work across `await` in a loop)
+- Notes for downstream agents (full details in /agent-ctx/E1-full-stack-developer.md):
+  - admin/rewards GET returns each item with redemptionCount + linkedChallengeCount
+  - admin/redeemptions GET supports sortBy=rewardName|userName for relation-aware sort
+  - admin/invitations POST returns { invitation, inviteUrl: "/?invite={token}" }
+  - admin/employees/import accepts CSV with name,email[,title,teamId] columns; teamId accepts team name too; returns created[].tempPassword
+  - admin/employees/export returns text/csv attachment (focuspot-employees.csv)
+  - employee/stats returns heatmap array of 168 entries (7 days × 24 hours)
+  - employee/achievements returns { summary, byCategory, achievements }
+  - super/platform-stats returns mrrTrend, companiesCreatedTrend, activeUsersTrend (each 6 months) + topCompanies (top 10)
+  - super/search?q=... returns { companies, users, challenges, counts }
+
+Stage Summary:
+- 20 enterprise API routes delivered across 4 domains:
+  1. Rewards system (admin CRUD + redemption lifecycle management with auto-fulfilledAt)
+  2. Company settings (upsert-on-read defaults, regex-validated working hours/days, holiday calendar as JSON array)
+  3. Invitations (URL-safe tokens, 7-day expiry, revoke/expire lifecycle, blocks accepted invites)
+  4. CSV import/export (RFC 4180 parser, per-row validation, hashed temp passwords, directory-only export)
+  5. Employee experience (achievements with progress %, 30-day heatmap+calendar+weekly summary, granular notification preferences, redemption history)
+  6. Super admin platform tools (feature flags with GLOBAL/COMPANY scope, announcements with date-window validation, global search across 3 entity types, platform-wide audit log, platform stats with 6-month trends)
+- All routes consistently use: getSession() role checks, zod input validation, auditLog() on mutations, paginatedResponse() for lists, errorResponse() for errors, Next.js 16 async params pattern, scoped-by-companyId for admin routes
+- Verification: bun run lint → 0 errors; npx tsc --noEmit → 0 errors in src/
+- Dev server compiles cleanly with no new errors
+
+---
+Task ID: E2
+Agent: Main (orchestrator)
+Task: Enterprise backend — schema expansion, scheduler, security, challenge engine, stats, scoring
+
+Work Log:
+- Expanded Prisma schema with 16 new models: AuditLog, Reward, RewardRedemption, ChallengeReward, CompanySettings, Invitation, LoginHistory, EmployeeStatistics, TeamStatistics, CompanyStatistics, ScheduledJob, NotificationPreference, Achievement, UserAchievement, FeatureFlag, PlatformAnnouncement
+- Extended existing models: User (failedLoginAttempts, lockedUntil, passwordChangedAt, lastLoginAt, totalSessions), Company (maintenanceMode), Challenge (scoringModel, scoringWeights, scope, targetTeamId, isRecurring, recurrencePattern, parentChallengeId, archived, cancelledReason, cancelledAt), FocusSession (archived), Notification (channel, status, retryCount, lastError)
+- Added indexes on all frequently-queried columns
+- Created `src/lib/audit.ts` (auditLog + recordLoginAttempt helpers)
+- Created `src/lib/query.ts` (pagination, filtering, sorting, standard error response, search clause)
+- Created `src/lib/stats.ts` (refreshEmployeeStats, refreshTeamStats, refreshCompanyStats, refreshCompanyStatsRange, checkAchievements)
+- Created `src/lib/scoring.ts` (computeChallengeScores with TOTAL_HOURS/AVG_PER_MEMBER/PARTICIPATION_RATE/WEIGHTED models, getChallengeWinner, getChallengeRunnerUps)
+- Created `src/lib/notifications.ts` (sendNotification with preference checking, sendNotifications batch)
+- Enhanced login route: account lockout (5 attempts → 15min lock), login history recording, audit logging, maintenance mode awareness
+- Enhanced challenge creation: scoring model, scope (COMPANY/TEAM), draft/schedule/active status, recurring, reward linking, scheduled job creation for auto-activation + auto-closure
+- Enhanced challenge [id] route: PATCH (edit draft/scheduled), DELETE with actions: cancel, duplicate, archive, permanent delete
+- Enhanced session creation: triggers stats refresh (employee/team/company), achievement check, returns newAchievements
+- Built scheduler mini-service (`mini-services/scheduler/index.ts`): polls every 30s for due ScheduledJobs, ad-hoc checks every 5min for challenge activation/closure + recurring instance creation. Job types: CHALLENGE_ACTIVATE, CHALLENGE_CLOSE, STATS_REFRESH, STREAK_RESET, NOTIF_CLEANUP, SESSION_ARCHIVE
+- Subagent E1 built 20 new API routes (rewards CRUD, redemptions, company settings, invitations, CSV import/export, employee achievements/stats/preferences/rewards, super admin feature flags/announcements/search/audit-log/platform-stats)
+- Re-seeded with 12 achievements, 5 rewards, 6 feature flags, 1 platform announcement, company settings for all companies, scheduled jobs for challenge closure, notification preferences for all users
+- Lint clean, TypeScript clean
+
+Stage Summary:
+- 16 new database tables, 6 lib modules, scheduler mini-service
+- Enterprise features: audit logging, login history, account lockout, scoring models, rewards system, persisted statistics, achievements, scheduler, CSV import/export, invitations, company settings, feature flags, platform announcements, global search
+- Scheduler auto-closes challenges at endDate, auto-activates scheduled challenges, refreshes stats, resets stale streaks, creates recurring challenge instances
+- All APIs use pagination, validation, auth checks, audit logging
+- Frontend subagents needed to build UI for: rewards catalog, employee achievements/analytics, admin CSV/settings/audit, super admin search/flags/announcements
+
+---
+Task ID: F2
+Agent: full-stack-developer (Employee & Super Admin Enterprise UI)
+Task: Build Employee Achievements/Stats/Rewards tabs, enhance notifications. Build Super Admin Feature Flags/Announcements/Audit Log tabs + Global Search.
+
+Work Log:
+- Created 5 new files + modified 3 existing files (no API changes — all routes already built by E1)
+- Employee Experience (Part A):
+  - `src/components/focuspot/employee/achievements-tab.tsx` — grouped-by-category achievement cards (FOCUS/STREAK/SOCIAL/MILESTONE), SVG circular progress indicator, unlocked=full-color+glow vs locked=grayscale+opacity-70, progress bar showing current metric value vs threshold, metric-aware formatting (sessions/hours/days), unlocked date or "X to go" label
+  - `src/components/focuspot/employee/stats-tab.tsx` — 4 summary cards (total focus / sessions / avg per active day / current streak), recharts LineChart for daily focus minutes, GitHub-style 30-day session calendar (emerald intensity buckets), best-day card with this-week summary, 7×24 focus heatmap with 5-level emerald scale + axis labels + legend
+  - `src/components/focuspot/employee/rewards-tab.tsx` — 3 summary cards (total/fulfilled/pending), reward cards with tier badge (WINNER/RUNNER_UP/PARTICIPATION), type badge, status badge, copy-to-clipboard code box for fulfilled rewards, earned/fulfilled/expires dates, empty state
+  - `src/components/focuspot/employee-dashboard.tsx` — added 3 new NavButtons (Award/BarChart3/Gift icons) + render branches for achievements/stats/rewards tabs
+  - `src/components/focuspot/employee/notifications.tsx` — enhanced iconFor/tintFor to handle REWARD (amber/gift), ACHIEVEMENT (violet/award), WARNING (amber/triangle), SUCCESS (emerald/check), CHALLENGE (violet/trophy), plus INFO (sky), STREAK (orange), CHALLENGE_WON (amber/gift)
+- Super Admin Enterprise UI (Part B):
+  - `src/components/focuspot/super/feature-flags-tab.tsx` — 4 stat cards + search/scope-filter toolbar + flags table with key/name/description/scope badge/enabled Switch/actions columns + Create flag dialog (key/name/description/scope/company selector/enabled) + toggle via PATCH + delete via AlertDialog
+  - `src/components/focuspot/super/announcements-tab.tsx` — 4 stat cards + announcement cards (type icon, badges, date range, dismissible) + Create/Edit dialog (title/message/type/active/dismissible/startsAt/optional endsAt) + delete confirmation + POST/PATCH/DELETE wiring
+  - `src/components/focuspot/super/audit-log-tab.tsx` — 4 stat cards + debounced search + action filter + paginated table (timestamp/user/action badge/entity/company/IP/expandable metadata) + prev/next pagination
+  - `src/components/focuspot/super/global-search.tsx` — ⌘K keyboard shortcut + 300ms debounce + grouped dropdown (companies/people/challenges) + click-outside close + DetailDialog for each result type + "Browse all companies" navigation
+  - `src/components/focuspot/super-admin-dashboard.tsx` — added 3 new tabs to TAB_META (Flag/Megaphone/ScrollText icons) + PAGE_TITLES + GlobalSearch in header (md+) + render branches
+
+Stage Summary:
+- 5 new feature tabs + 1 global search delivered across Employee and Super Admin dashboards
+- Employee Achievements: visual badge grid with circular progress + per-category sections
+- Employee Stats: 30-day analytics with line chart, calendar heatmap, 7×24 hourly heatmap
+- Employee Rewards: full redemption history with copy-to-clipboard codes + tier/status badges
+- Employee Notifications: now handles 8 notification types with spec-compliant color palette (NO blue/indigo)
+- Super Admin Feature Flags: full CRUD with optimistic toggle + scope-aware create dialog
+- Super Admin Announcements: full CRUD with date-window validation + live-now badge
+- Super Admin Audit Log: paginated platform-wide event log with expandable metadata + action color-coding
+- Super Admin Global Search: ⌘K shortcut, debounced grouped results, detail dialogs for each entity type
+- All UIs are mobile-first responsive, use shared AppShell/NavButton/getColor/getInitials, shadcn/ui, sonner, recharts, framer-motion
+- NO blue/indigo colors used — primary is emerald, accents are amber/rose/sky/violet/orange per spec
+- Heatmap colors: 5-level emerald intensity scale (muted → emerald-200 → 400 → 600 → 800)
+- Verification: `bun run lint` → 0 errors, 0 warnings; `npx tsc --noEmit` → 0 errors in src/; dev server compiles cleanly
+
+---
+Task ID: F1
+Agent: full-stack-developer (Admin Enterprise UI)
+Task: Build Rewards tab, Analytics tab, Audit Log tab, enhance Challenge tab (scoring/scope/draft/recurring/rewards), CSV import/export for Employees
+
+Work Log:
+- Created `src/components/focuspot/admin/rewards-tab.tsx` — two-section tab (Tabs: Catalog + Redemptions):
+  - Catalog: paginated reward cards (name, type badge, value, provider, inventory progress, expiry, redemption/challenge-link counts), active Switch toggle (PATCH), Create/Edit dialog (name, description, type select GIFT_CARD/MERCH/EXPERIENCE/CUSTOM, value, provider, inventory, imageColor picker, expiresAt), Delete confirm (AlertDialog). Type badges color-mapped: GIFT_CARD=emerald, MERCH=amber, EXPERIENCE=violet, CUSTOM=sky.
+  - Redemptions: paginated table + mobile cards, debounced search, status filter, tier + status badges (PENDING=amber, APPROVED=sky, FULFILLED=emerald, DECLINED=rose, EXPIRED=muted; WINNER=emerald, RUNNER_UP=amber, PARTICIPATION=sky). Quick Approve (PENDING→APPROVED), Fulfill dialog (APPROVED→FULFILLED with code input + notes), Decline dialog (with notes). All via PATCH /api/admin/redeemptions/[id].
+- Created `src/components/focuspot/admin/analytics-tab.tsx` — persisted statistics from /api/admin/analytics?days=N:
+  - Period selector (7/30/90 days) re-fetches on change.
+  - Totals stat cards: total focus hours, total sessions, total points, avg active employees (from `totals`).
+  - Daily focus hours AreaChart (emerald gradient, from `daily`).
+  - Weekly summary BarChart (emerald/amber/violet bars for hours/sessions/points, dual Y-axis, from `weekly`).
+  - Team trends multi-line LineChart (one line per team, color from TEAM_LINE_COLORS palette, legend + chips, from `teamTrends`).
+  - Monthly summary cards (hours/sessions/points per month, from `monthly`).
+  - Scheduler note: "Statistics are refreshed every hour by the scheduler."
+  - Sub-tabs (Daily/Weekly/Teams) for chart navigation.
+- Created `src/components/focuspot/admin/audit-log-tab.tsx` — compliance timeline:
+  - Paginated table (timestamp, user avatar+name+email, action badge with semantic color, entity type + entity ID hash, IP address, metadata preview chips).
+  - Mobile cards variant.
+  - Filter by action dropdown (pre-populated with 22 common actions + any seen in data) + debounced search.
+  - Action badges color-mapped: CREATED=emerald, UPDATED/APPROVED/DUPLICATED=sky, DELETED/CANCELLED/DECLINED/REVOKED/FAILED=rose, ARCHIVED/ENDED/FULFILLED=amber, LOGIN/SUCCESS=violet.
+  - Compliance banner explaining immutable activity record.
+- Enhanced `src/components/focuspot/admin/create-challenge-dialog.tsx` — added enterprise fields:
+  - Scoring model selector (TOTAL_HOURS/AVG_PER_MEMBER/PARTICIPATION_RATE/WEIGHTED) with tooltip explaining each model.
+  - Scope selector (Company-wide / Specific Team) with team dropdown when Team is chosen (fetches /api/admin/teams).
+  - Status selector (Active Now / Schedule for Later / Save as Draft) with descriptive cards + tooltips.
+  - Recurring checkbox ("Repeat weekly") — sets isRecurring + recurrencePattern='weekly'.
+  - Reward linking: multi-select of active catalog rewards (fetches /api/admin/rewards?active=true), per-reward tier selector (Winner/Runner-up/Participation with icons), remove button, live tier-preview badges.
+  - Submit button label changes based on status choice (Launch/Schedule/Save Draft).
+  - All fields sent to existing POST /api/admin/challenges (now accepts scoringModel, scope, targetTeamId, status, isRecurring, recurrencePattern, rewardIds[]).
+- Enhanced `src/components/focuspot/admin/challenge-tab.tsx` — added lifecycle actions + badges:
+  - Fetches /api/admin/challenges for rich list (scoringModel, scope, targetTeamId, status, rewards, winnerTeam, cancelledReason, isRecurring).
+  - Active challenge card now shows scoring model + scope + recurring + reward-link badges.
+  - New "Cancel Challenge" button on active card → opens reason dialog → DELETE ?action=cancel with {reason}.
+  - "Upcoming & Drafts" section (SCHEDULED + DRAFT challenges) with per-card dropdown: Duplicate, Cancel (if scheduled), Delete (if draft).
+  - "Past Challenges" section (COMPLETED + CANCELLED) with per-card dropdown: Duplicate, Archive (if completed), Delete (if cancelled). Cancelled cards show cancel reason.
+  - Duplicate → DELETE ?action=duplicate (creates draft copy). Archive → DELETE ?action=archive.
+  - "Show archived" toggle refetches with includeArchived=true.
+  - Status-colored card accent strips (emerald=completed, rose=cancelled, sky=scheduled, amber=draft/active).
+  - Scoring badge (TOTAL_HOURS=emerald, AVG_PER_MEMBER=amber, PARTICIPATION_RATE=sky, WEIGHTED=violet) + scope badge (Company-wide / Team name with color dot) on every card.
+- Enhanced `src/components/focuspot/admin/employees-tab.tsx` — CSV import/export:
+  - "Import CSV" button next to "Add Employee" → opens dialog with: format helper (header: name,email,title,teamId), "Download Template" button (generates sample CSV with team name example), "Download Current" button (hits /api/admin/employees/export), textarea to paste CSV, seat-limit warning, Import button (POST /api/admin/employees/import).
+  - Import results dialog: summary cards (created/failed/seats-used), scrollable list of created employees with temp passwords + per-row copy button + "Copy all" button, errors list with row number + email + error message.
+  - "Export CSV" button in header → triggers GET /api/admin/employees/export (downloads blob with Content-Disposition filename).
+  - Reuses existing temp-password sharing UX pattern from Add Employee.
+- Updated `src/components/focuspot/company-admin-dashboard.tsx`:
+  - Added 3 new tabs to TABS array: Rewards (Gift icon), Analytics (BarChart3 icon), Audit Log (ScrollText icon).
+  - Imported RewardsTab, AnalyticsTab, AuditLogTab components.
+  - Added render branches in AnimatePresence for the 3 new tabs.
+- Updated `src/components/focuspot/admin/types.ts`:
+  - Extended TabKey to include 'rewards' | 'analytics' | 'audit'.
+  - Added types: RewardType, RedemptionStatus, RedemptionTier, RewardItem, RedemptionItem, Pagination, PaginatedRewards, PaginatedRedemptions, AnalyticsDaily/Weekly/Monthly/TeamTrendPoint/TeamTrend/Totals/Data, AuditLogItem, PaginatedAuditLog, ChallengeScoringModel, ChallengeStatus, ChallengeScope, ChallengeRich, ChallengesListResponse.
+
+Stage Summary:
+- 3 new admin tabs delivered: Rewards (catalog + redemptions lifecycle), Analytics (persisted stats with 4 chart types + period selector), Audit Log (paginated compliance timeline with filters).
+- Challenge creation now supports full enterprise model: scoring (4 models), scope (company/team), status (active/scheduled/draft), recurring weekly, reward linking with tiers.
+- Challenge list supports cancel/duplicate/archive actions with appropriate status guards + reason capture.
+- Employees tab supports bulk CSV import (with template download, current-export, per-row temp passwords) and one-click CSV export.
+- All UI follows design requirements: emerald primary, no blue/indigo, mobile-first responsive, p-4/p-6 cards, max-h-96+scrollbar-thin for long lists, semantic badge colors per spec.
+- Verification: `bun run lint` → 0 errors, 0 warnings. `npx tsc --noEmit` → 0 errors in src/. Dev server compiles cleanly.
+
+---
+Task ID: E3
+Agent: Main (orchestrator)
+Task: Final integration, verification, and audit of enterprise hardening
+
+Work Log:
+- Both frontend subagents (F1, F2) completed successfully
+- Ran `bun run lint` → clean (0 errors)
+- Ran `npx tsc --noEmit` → 0 errors in src/
+- Final file counts: 48 API routes, 37 components, 11 lib files, 6 Prisma models → 22 models
+- Started dev server + scheduler mini-service (both running)
+- Comprehensive end-to-end audit with Agent Browser — ALL 10 checks PASSED:
+  1. Employee Achievements tab: PRESENT (12 achievements, grouped by category)
+  2. Employee Stats tab: PRESENT (heatmap, calendar, weekly summary)
+  3. Employee Rewards tab: PRESENT (reward history with codes)
+  4. Company Admin Rewards catalog: PRESENT (create/edit/delete, redemptions workflow)
+  5. Company Admin Analytics: PRESENT (daily/weekly/monthly charts, team trends)
+  6. Company Admin Audit Log: PRESENT (paginated, filterable)
+  7. Super Admin Feature Flags: PRESENT (toggle switches, CRUD)
+  8. Super Admin Announcements: PRESENT (create/edit/delete)
+  9. Super Admin Global Search: PRESENT (search input in header)
+  10. API Health Check: ALL 11 new endpoints return 200 (employee/achievements, employee/stats, employee/rewards, admin/rewards, admin/analytics, admin/audit-log, super/feature-flags, super/announcements, super/platform-stats, super/audit-log, super/search)
+- Re-seeded database to clean state
+
+Stage Summary:
+- FocusPot is now enterprise-hardened with 22 database tables, 48 API routes, 37 components, a scheduler mini-service, and comprehensive features across all three roles
+- Enterprise features delivered: audit logging, login history, account lockout, scoring models, rewards system with redemption workflow, persisted statistics, achievements gamification, automatic challenge scheduling/closure, CSV import/export, invitation system, company settings, feature flags, platform announcements, global search, focus heatmap, session calendar, analytics dashboard
+- Scheduler auto-closes challenges, auto-activates scheduled challenges, refreshes stats, resets streaks, archives old data, creates recurring instances
+- All APIs use pagination, validation, auth checks, audit logging
+- Lint clean, TypeScript clean, no runtime errors

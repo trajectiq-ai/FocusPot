@@ -14,6 +14,9 @@ import {
   RefreshCw,
   ShieldCheck,
   Sparkles,
+  Gift,
+  BarChart3,
+  ScrollText,
 } from 'lucide-react'
 import { AppShell, NavButton } from '@/components/focuspot/shared/app-shell'
 import { Button } from '@/components/ui/button'
@@ -28,6 +31,9 @@ import { TeamsTab } from './admin/teams-tab'
 import { HistoryTab } from './admin/history-tab'
 import { EmployeesTab } from './admin/employees-tab'
 import { SettingsTab } from './admin/settings-tab'
+import { RewardsTab } from './admin/rewards-tab'
+import { AnalyticsTab } from './admin/analytics-tab'
+import { AuditLogTab } from './admin/audit-log-tab'
 import type { DashboardData, TabKey } from './admin/types'
 
 const TABS: { key: TabKey; label: string; icon: typeof LayoutDashboard }[] = [
@@ -35,6 +41,9 @@ const TABS: { key: TabKey; label: string; icon: typeof LayoutDashboard }[] = [
   { key: 'challenge', label: 'Challenge', icon: Trophy },
   { key: 'teams', label: 'Teams', icon: Users },
   { key: 'employees', label: 'Employees', icon: Users },
+  { key: 'rewards', label: 'Rewards', icon: Gift },
+  { key: 'analytics', label: 'Analytics', icon: BarChart3 },
+  { key: 'audit', label: 'Audit Log', icon: ScrollText },
   { key: 'settings', label: 'Settings', icon: Settings },
   { key: 'history', label: 'History', icon: History },
 ]
@@ -190,6 +199,9 @@ export function CompanyAdminDashboard() {
               {activeTab === 'employees' && (
                 <EmployeesTab onRefresh={handleRefresh} adminId={data.admin.id} />
               )}
+              {activeTab === 'rewards' && <RewardsTab onRefresh={handleRefresh} />}
+              {activeTab === 'analytics' && <AnalyticsTab />}
+              {activeTab === 'audit' && <AuditLogTab />}
               {activeTab === 'settings' && (
                 <SettingsTab
                   company={data.company}

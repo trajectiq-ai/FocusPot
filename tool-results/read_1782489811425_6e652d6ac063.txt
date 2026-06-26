@@ -1,0 +1,702 @@
+    60→    60→    60→} from '@/components/ui/alert-dialog'
+    61→    61→    61→import {
+    62→    62→    62→  DropdownMenu,
+    63→    63→    63→  DropdownMenuContent,
+    64→    64→    64→  DropdownMenuItem,
+    65→    65→    65→  DropdownMenuSeparator,
+    66→    66→    66→  DropdownMenuTrigger,
+    67→    67→    67→} from '@/components/ui/dropdown-menu'
+    68→    68→    68→import {
+    69→    69→    69→  Select,
+    70→    70→    70→  SelectContent,
+    71→    71→    71→  SelectItem,
+    72→    72→    72→  SelectTrigger,
+    73→    73→    73→  SelectValue,
+    74→    74→    74→} from '@/components/ui/select'
+    75→    75→    75→import { getColor, getInitials } from '@/lib/colors'
+    76→    76→    76→import { useAuthStore } from '@/lib/store'
+    77→    77→    77→import type {
+    78→    78→    78→  EmployeeDirectoryItem,
+    79→    79→    79→  EmployeesResponse,
+    80→    80→    80→  TeamManageItem,
+    81→    81→    81→} from './types'
+    82→    82→    82→
+    83→    83→    83→type AddEmployeeResult = {
+    84→    84→    84→  employee: {
+    85→    85→    85→    id: string
+    86→    86→    86→    name: string
+    87→    87→    87→    email: string
+    88→    88→    88→    title: string
+    89→    89→    89→    role: string
+    90→    90→    90→    avatarColor: string
+    91→    91→    91→    teamId: string | null
+    92→    92→    92→    tempPassword: string
+    93→    93→    93→  }
+    94→    94→    94→}
+    95→    95→    95→
+    96→    96→    96→export function EmployeesTab({
+    97→    97→    97→  onRefresh,
+    98→    98→    98→  adminId,
+    99→    99→    99→}: {
+   100→   100→   100→  onRefresh: () => void
+   101→   101→   101→  adminId: string
+   102→   102→   102→}) {
+   103→   103→   103→  const { user } = useAuthStore()
+   104→   104→   104→  const [data, setData] = useState<EmployeesResponse | null>(null)
+   105→   105→   105→  const [teams, setTeams] = useState<TeamManageItem[]>([])
+   106→   106→   106→  const [loading, setLoading] = useState(true)
+   107→   107→   107→  const [error, setError] = useState<string | null>(null)
+   108→   108→   108→
+   109→   109→   109→  const [search, setSearch] = useState('')
+   110→   110→   110→  const [teamFilter, setTeamFilter] = useState<string>('all')
+   111→   111→   111→
+   112→   112→   112→  // Dialogs
+   113→   113→   113→  const [addOpen, setAddOpen] = useState(false)
+   114→   114→   114→  const [editOpen, setEditOpen] = useState(false)
+   115→   115→   115→  const [changeTeamOpen, setChangeTeamOpen] = useState(false)
+   116→   116→   116→  const [removeOpen, setRemoveOpen] = useState(false)
+   117→   117→   117→  const [activeEmployee, setActiveEmployee] = useState<EmployeeDirectoryItem | null>(null)
+   118→   118→   118→  const [tempPasswordInfo, setTempPasswordInfo] = useState<{ name: string; email: string; password: string } | null>(null)
+   119→   119→   119→
+   120→   120→   120→  const fetchData = useCallback(async () => {
+   121→   121→   121→    setError(null)
+   122→   122→   122→    try {
+   123→   123→   123→      const [empRes, teamsRes] = await Promise.all([
+   124→   124→   124→        fetch('/api/admin/employees', { cache: 'no-store' }),
+   125→   125→   125→        fetch('/api/admin/teams', { cache: 'no-store' }),
+   126→   126→   126→      ])
+   127→   127→   127→      if (!empRes.ok) {
+   128→   128→   128→        const j = await empRes.json().catch(() => ({}))
+   129→   129→   129→        throw new Error(j.error || `Failed (${empRes.status})`)
+   130→   130→   130→      }
+   131→   131→   131→      const empJson = (await empRes.json()) as EmployeesResponse
+   132→   132→   132→      setData(empJson)
+   133→   133→   133→      if (teamsRes.ok) {
+   134→   134→   134→        const tJson = await teamsRes.json()
+   135→   135→   135→        setTeams(tJson.teams || [])
+   136→   136→   136→      }
+   137→   137→   137→    } catch (e) {
+   138→   138→   138→      setError(e instanceof Error ? e.message : 'Failed to load employees')
+   139→   139→   139→    } finally {
+   140→   140→   140→      setLoading(false)
+   141→   141→   141→    }
+   142→   142→   142→  }, [])
+   143→   143→   143→
+   144→   144→   144→  useEffect(() => {
+   145→   145→   145→    fetchData()
+   146→   146→   146→  }, [fetchData])
+   147→   147→   147→
+   148→   148→   148→  const filtered = useMemo(() => {
+   149→   149→   149→    if (!data) return []
+   150→   150→   150→    return data.employees.filter((e) => {
+   151→   151→   151→      const matchesSearch =
+   152→   152→   152→        !search ||
+   153→   153→   153→        e.name.toLowerCase().includes(search.toLowerCase()) ||
+   154→   154→   154→        e.email.toLowerCase().includes(search.toLowerCase()) ||
+   155→   155→   155→        (e.title || '').toLowerCase().includes(search.toLowerCase())
+   156→   156→   156→      const matchesTeam = teamFilter === 'all' || e.teamId === teamFilter
+   157→   157→   157→      return matchesSearch && matchesTeam
+   158→   158→   158→    })
+   159→   159→   159→  }, [data, search, teamFilter])
+   160→   160→   160→
+   161→   161→   161→  const seatsPct = data
+   162→   162→   162→    ? Math.min(100, data.seats > 0 ? Math.round((data.employeeCount / data.seats) * 100) : 0)
+   163→   163→   163→    : 0
+   164→   164→   164→  const seatsLeft = data ? data.seats - data.employeeCount : 0
+   165→   165→   165→
+   166→   166→   166→  const handleAdded = (result: AddEmployeeResult) => {
+   167→   167→   167→    setAddOpen(false)
+   168→   168→   168→    setTempPasswordInfo({
+   169→   169→   169→      name: result.employee.name,
+   170→   170→   170→      email: result.employee.email,
+   171→   171→   171→      password: result.employee.tempPassword,
+   172→   172→   172→    })
+   173→   173→   173→    fetchData()
+   174→   174→   174→    onRefresh()
+   175→   175→   175→    toast.success('Employee added')
+   176→   176→   176→  }
+   177→   177→   177→
+   178→   178→   178→  const handleEdit = (emp: EmployeeDirectoryItem) => {
+   179→   179→   179→    setActiveEmployee(emp)
+   180→   180→   180→    setEditOpen(true)
+   181→   181→   181→  }
+   182→   182→   182→  const handleChangeTeam = (emp: EmployeeDirectoryItem) => {
+   183→   183→   183→    setActiveEmployee(emp)
+   184→   184→   184→    setChangeTeamOpen(true)
+   185→   185→   185→  }
+   186→   186→   186→  const handleRemove = (emp: EmployeeDirectoryItem) => {
+   187→   187→   187→    setActiveEmployee(emp)
+   188→   188→   188→    setRemoveOpen(true)
+   189→   189→   189→  }
+   190→   190→   190→
+   191→   191→   191→  const handleToggleActive = async (emp: EmployeeDirectoryItem) => {
+   192→   192→   192→    const next = !emp.active
+   193→   193→   193→    try {
+   194→   194→   194→      const res = await fetch(`/api/admin/employees/${emp.id}`, {
+   195→   195→   195→        method: 'PATCH',
+   196→   196→   196→        headers: { 'Content-Type': 'application/json' },
+   197→   197→   197→        body: JSON.stringify({ active: next }),
+   198→   198→   198→      })
+   199→   199→   199→      const j = await res.json().catch(() => ({}))
+   200→   200→   200→      if (!res.ok) throw new Error(j.error || 'Failed to update')
+   201→   201→   201→      toast.success(next ? 'Employee reactivated' : 'Employee deactivated')
+   202→   202→   202→      fetchData()
+   203→   203→   203→      onRefresh()
+   204→   204→   204→    } catch (e) {
+   205→   205→   205→      toast.error(e instanceof Error ? e.message : 'Failed to update employee')
+   206→   206→   206→    }
+   207→   207→   207→  }
+   208→   208→   208→
+   209→   209→   209→  return (
+   210→   210→   210→    <div className="space-y-6">
+   211→   211→   211→      {/* Privacy Shield header */}
+   212→   212→   212→      <div className="flex items-start gap-2.5 p-4 rounded-xl border border-emerald-200/70 dark:border-emerald-800/50 bg-emerald-50/60 dark:bg-emerald-950/20">
+   213→   213→   213→        <Lock className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0" />
+   214→   214→   214→        <div className="text-sm">
+   215→   215→   215→          <p className="font-semibold text-emerald-900 dark:text-emerald-100">
+   216→   216→   216→            Directory only — focus data stays private
+   217→   217→   217→          </p>
+   218→   218→   218→          <p className="text-xs text-emerald-800/80 dark:text-emerald-200/70 mt-0.5">
+   219→   219→   219→            This view shows names, emails, titles, teams, and status only. Individual focus hours,
+   220→   220→   220→            sessions, streaks, and points are never visible to admins.
+   221→   221→   221→          </p>
+   222→   222→   222→        </div>
+   223→   223→   223→      </div>
+   224→   224→   224→
+   225→   225→   225→      {/* Header / actions */}
+   226→   226→   226→      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+   227→   227→   227→        <div>
+   228→   228→   228→          <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
+   229→   229→   229→            <Users className="w-5 h-5 text-violet-500" /> Employee Directory
+   230→   230→   230→          </h2>
+   231→   231→   231→          <p className="text-sm text-muted-foreground mt-0.5">
+   232→   232→   232→            Add, edit, and manage your team members.
+   233→   233→   233→          </p>
+   234→   234→   234→        </div>
+   235→   235→   235→        <Button
+   236→   236→   236→          onClick={() => setAddOpen(true)}
+   237→   237→   237→          className="bg-emerald-600 hover:bg-emerald-700"
+   238→   238→   238→          disabled={!data || seatsLeft <= 0}
+   239→   239→   239→        >
+   240→   240→   240→          <Plus className="w-4 h-4" /> Add Employee
+   241→   241→   241→        </Button>
+   242→   242→   242→      </div>
+   243→   243→   243→
+   244→   244→   244→      {/* Seats progress */}
+   245→   245→   245→      {data && (
+   246→   246→   246→        <Card>
+   247→   247→   247→          <CardContent className="p-4 sm:p-6">
+   248→   248→   248→            <div className="flex items-center justify-between flex-wrap gap-2">
+   249→   249→   249→              <div>
+   250→   250→   250→                <p className="text-sm font-semibold">Seats used</p>
+   251→   251→   251→                <p className="text-xs text-muted-foreground">
+   252→   252→   252→                  {data.employeeCount} active employee{data.employeeCount === 1 ? '' : 's'} of{' '}
+   253→   253→   253→                  {data.seats} seats on your plan
+   254→   254→   254→                </p>
+   255→   255→   255→              </div>
+   256→   256→   256→              <div className="text-right">
+   257→   257→   257→                <p className="text-2xl font-bold tabular-nums">
+   258→   258→   258→                  {data.employeeCount}
+   259→   259→   259→                  <span className="text-base text-muted-foreground font-normal"> / {data.seats}</span>
+   260→   260→   260→                </p>
+   261→   261→   261→                <p className="text-xs text-muted-foreground">{seatsLeft} available</p>
+   262→   262→   262→              </div>
+   263→   263→   263→            </div>
+   264→   264→   264→            <Progress
+   265→   265→   265→              value={seatsPct}
+   266→   266→   266→              className="h-2 mt-3"
+   267→   267→   267→            />
+   268→   268→   268→            {seatsLeft <= 2 && seatsLeft > 0 && (
+   269→   269→   269→              <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 flex items-center gap-1.5">
+   270→   270→   270→                <AlertTriangle className="w-3.5 h-3.5" />
+   271→   271→   271→                You&apos;re almost out of seats. Only {seatsLeft} left.
+   272→   272→   272→              </p>
+   273→   273→   273→            )}
+   274→   274→   274→            {seatsLeft <= 0 && (
+   275→   275→   275→              <p className="text-xs text-rose-600 dark:text-rose-400 mt-2 flex items-center gap-1.5">
+   276→   276→   276→                <AlertTriangle className="w-3.5 h-3.5" />
+   277→   277→   277→                Seat limit reached. Upgrade your plan in Settings to add more employees.
+   278→   278→   278→              </p>
+   279→   279→   279→            )}
+   280→   280→   280→          </CardContent>
+   281→   281→   281→        </Card>
+   282→   282→   282→      )}
+   283→   283→   283→
+   284→   284→   284→      {/* Search / filter */}
+   285→   285→   285→      <div className="flex flex-col sm:flex-row gap-2">
+   286→   286→   286→        <div className="relative flex-1">
+   287→   287→   287→          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+   288→   288→   288→          <Input
+   289→   289→   289→            placeholder="Search by name, email, or title…"
+   290→   290→   290→            value={search}
+   291→   291→   291→            onChange={(e) => setSearch(e.target.value)}
+   292→   292→   292→            className="pl-9"
+   293→   293→   293→          />
+   294→   294→   294→        </div>
+   295→   295→   295→        <Select value={teamFilter} onValueChange={setTeamFilter}>
+   296→   296→   296→          <SelectTrigger className="w-full sm:w-56">
+   297→   297→   297→            <SelectValue placeholder="Filter by team" />
+   298→   298→   298→          </SelectTrigger>
+   299→   299→   299→          <SelectContent>
+   300→   300→   300→            <SelectItem value="all">All teams</SelectItem>
+   301→   301→   301→            {teams.map((t) => (
+   302→   302→   302→              <SelectItem key={t.id} value={t.id}>
+   303→   303→   303→                <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${getColor(t.color).dot}`} />
+   304→   304→   304→                {t.name}
+   305→   305→   305→              </SelectItem>
+   306→   306→   306→            ))}
+   307→   307→   307→          </SelectContent>
+   308→   308→   308→        </Select>
+   309→   309→   309→      </div>
+   310→   310→   310→
+   311→   311→   311→      {/* Body */}
+   312→   312→   312→      {loading ? (
+   313→   313→   313→        <Card>
+   314→   314→   314→          <CardContent className="py-12 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+   315→   315→   315→            <Loader2 className="w-4 h-4 animate-spin" /> Loading directory…
+   316→   316→   316→          </CardContent>
+   317→   317→   317→        </Card>
+   318→   318→   318→      ) : error ? (
+   319→   319→   319→        <Card className="border-rose-200 dark:border-rose-800/50">
+   320→   320→   320→          <CardContent className="py-10 text-center">
+   321→   321→   321→            <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p>
+   322→   322→   322→            <Button variant="outline" size="sm" className="mt-3" onClick={fetchData}>
+   323→   323→   323→              Try again
+   324→   324→   324→            </Button>
+   325→   325→   325→          </CardContent>
+   326→   326→   326→        </Card>
+   327→   327→   327→      ) : filtered.length === 0 ? (
+   328→   328→   328→        <Card className="border-dashed">
+   329→   329→   329→          <CardContent className="py-12 text-center">
+   330→   330→   330→            <Users className="w-10 h-10 mx-auto text-muted-foreground/50 mb-2" />
+   331→   331→   331→            <p className="text-sm font-medium">No employees match your filters</p>
+   332→   332→   332→            <p className="text-xs text-muted-foreground mt-1">
+   333→   333→   333→              Try clearing the search or team filter.
+   334→   334→   334→            </p>
+   335→   335→   335→          </CardContent>
+   336→   336→   336→        </Card>
+   337→   337→   337→      ) : (
+   338→   338→   338→        <>
+   339→   339→   339→          {/* Desktop table */}
+   340→   340→   340→          <Card className="hidden md:block">
+   341→   341→   341→            <CardContent className="p-0">
+   342→   342→   342→              <div className="max-h-[32rem] overflow-y-auto scrollbar-thin">
+   343→   343→   343→                <Table>
+   344→   344→   344→                  <TableHeader className="sticky top-0 bg-card z-10">
+   345→   345→   345→                    <TableRow>
+   346→   346→   346→                      <TableHead className="pl-6">Employee</TableHead>
+   347→   347→   347→                      <TableHead>Title</TableHead>
+   348→   348→   348→                      <TableHead>Team</TableHead>
+   349→   349→   349→                      <TableHead>Status</TableHead>
+   350→   350→   350→                      <TableHead>Joined</TableHead>
+   351→   351→   351→                      <TableHead className="pr-6 text-right">Actions</TableHead>
+   352→   352→   352→                    </TableRow>
+   353→   353→   353→                  </TableHeader>
+   354→   354→   354→                  <TableBody>
+   355→   355→   355→                    {filtered.map((emp) => (
+   356→   356→   356→                      <EmployeeRow
+   357→   357→   357→                        key={emp.id}
+   358→   358→   358→                        emp={emp}
+   359→   359→   359→                        isSelf={emp.id === (user?.id || adminId)}
+   360→   360→   360→                        onEdit={() => handleEdit(emp)}
+   361→   361→   361→                        onChangeTeam={() => handleChangeTeam(emp)}
+   362→   362→   362→                        onToggleActive={() => handleToggleActive(emp)}
+   363→   363→   363→                        onRemove={() => handleRemove(emp)}
+   364→   364→   364→                      />
+   365→   365→   365→                    ))}
+   366→   366→   366→                  </TableBody>
+   367→   367→   367→                </Table>
+   368→   368→   368→              </div>
+   369→   369→   369→            </CardContent>
+   370→   370→   370→          </Card>
+   371→   371→   371→
+   372→   372→   372→          {/* Mobile cards */}
+   373→   373→   373→          <div className="md:hidden grid grid-cols-1 gap-3">
+   374→   374→   374→            {filtered.map((emp) => (
+   375→   375→   375→              <EmployeeMobileCard
+   376→   376→   376→                key={emp.id}
+   377→   377→   377→                emp={emp}
+   378→   378→   378→                isSelf={emp.id === (user?.id || adminId)}
+   379→   379→   379→                onEdit={() => handleEdit(emp)}
+   380→   380→   380→                onChangeTeam={() => handleChangeTeam(emp)}
+   381→   381→   381→                onToggleActive={() => handleToggleActive(emp)}
+   382→   382→   382→                onRemove={() => handleRemove(emp)}
+   383→   383→   383→              />
+   384→   384→   384→            ))}
+   385→   385→   385→          </div>
+   386→   386→   386→        </>
+   387→   387→   387→      )}
+   388→   388→   388→
+   389→   389→   389→      {/* Add Employee dialog */}
+   390→   390→   390→      <AddEmployeeDialog
+   391→   391→   391→        open={addOpen}
+   392→   392→   392→        onOpenChange={setAddOpen}
+   393→   393→   393→        teams={teams}
+   394→   394→   394→        onAdded={handleAdded}
+   395→   395→   395→      />
+   396→   396→   396→
+   397→   397→   397→      {/* Edit details dialog */}
+   398→   398→   398→      {activeEmployee && (
+   399→   399→   399→        <EditEmployeeDialog
+   400→   400→   400→          open={editOpen}
+   401→   401→   401→          onOpenChange={setEditOpen}
+   402→   402→   402→          employee={activeEmployee}
+   403→   403→   403→          isSelf={activeEmployee.id === (user?.id || adminId)}
+   404→   404→   404→          onSaved={() => {
+   405→   405→   405→            setEditOpen(false)
+   406→   406→   406→            fetchData()
+   407→   407→   407→            onRefresh()
+   408→   408→   408→          }}
+   409→   409→   409→        />
+   410→   410→   410→      )}
+   411→   411→   411→
+   412→   412→   412→      {/* Change team dialog */}
+   413→   413→   413→      {activeEmployee && (
+   414→   414→   414→        <ChangeTeamDialog
+   415→   415→   415→          open={changeTeamOpen}
+   416→   416→   416→          onOpenChange={setChangeTeamOpen}
+   417→   417→   417→          employee={activeEmployee}
+   418→   418→   418→          teams={teams}
+   419→   419→   419→          onSaved={() => {
+   420→   420→   420→            setChangeTeamOpen(false)
+   421→   421→   421→            fetchData()
+   422→   422→   422→            onRefresh()
+   423→   423→   423→          }}
+   424→   424→   424→        />
+   425→   425→   425→      )}
+   426→   426→   426→
+   427→   427→   427→      {/* Remove confirm */}
+   428→   428→   428→      <AlertDialog open={removeOpen} onOpenChange={setRemoveOpen}>
+   429→   429→   429→        <AlertDialogContent>
+   430→   430→   430→          <AlertDialogHeader>
+   431→   431→   431→            <AlertDialogTitle className="flex items-center gap-2">
+   432→   432→   432→              <Trash2 className="w-5 h-5 text-rose-500" /> Remove employee?
+   433→   433→   433→            </AlertDialogTitle>
+   434→   434→   434→            <AlertDialogDescription>
+   435→   435→   435→              This permanently deletes{' '}
+   436→   436→   436→              <span className="font-semibold text-foreground">{activeEmployee?.name}</span> (
+   437→   437→   437→              {activeEmployee?.email}) and all of their focus sessions and notifications. This
+   438→   438→   438→              action cannot be undone.
+   439→   439→   439→            </AlertDialogDescription>
+   440→   440→   440→          </AlertDialogHeader>
+   441→   441→   441→          <AlertDialogFooter>
+   442→   442→   442→            <AlertDialogCancel>Cancel</AlertDialogCancel>
+   443→   443→   443→            <AlertDialogAction
+   444→   444→   444→              className="bg-rose-600 hover:bg-rose-700 text-white"
+   445→   445→   445→              onClick={async (e) => {
+   446→   446→   446→                e.preventDefault()
+   447→   447→   447→                if (!activeEmployee) return
+   448→   448→   448→                try {
+   449→   449→   449→                  const res = await fetch(`/api/admin/employees/${activeEmployee.id}`, {
+   450→   450→   450→                    method: 'DELETE',
+   451→   451→   451→                  })
+   452→   452→   452→                  const j = await res.json().catch(() => ({}))
+   453→   453→   453→                  if (!res.ok) throw new Error(j.error || 'Failed to remove')
+   454→   454→   454→                  toast.success('Employee removed')
+   455→   455→   455→                  setRemoveOpen(false)
+   456→   456→   456→                  fetchData()
+   457→   457→   457→                  onRefresh()
+   458→   458→   458→                } catch (err) {
+   459→   459→   459→                  toast.error(err instanceof Error ? err.message : 'Failed to remove employee')
+   460→   460→   460→                }
+   461→   461→   461→              }}
+   462→   462→   462→            >
+   463→   463→   463→              <Trash2 className="w-4 h-4" /> Remove permanently
+   464→   464→   464→            </AlertDialogAction>
+   465→   465→   465→          </AlertDialogFooter>
+   466→   466→   466→        </AlertDialogContent>
+   467→   467→   467→      </AlertDialog>
+   468→   468→   468→
+   469→   469→   469→      {/* Temp password success dialog */}
+   470→   470→   470→      <TempPasswordDialog
+   471→   471→   471→        key={tempPasswordInfo?.password || 'empty'}
+   472→   472→   472→        info={tempPasswordInfo}
+   473→   473→   473→        onClose={() => setTempPasswordInfo(null)}
+   474→   474→   474→      />
+   475→   475→   475→    </div>
+   476→   476→   476→  )
+   477→   477→   477→}
+   478→   478→   478→
+   479→   479→   479→function EmployeeRow({
+   480→   480→   480→  emp,
+   481→   481→   481→  isSelf,
+   482→   482→   482→  onEdit,
+   483→   483→   483→  onChangeTeam,
+   484→   484→   484→  onToggleActive,
+   485→   485→   485→  onRemove,
+   486→   486→   486→}: {
+   487→   487→   487→  emp: EmployeeDirectoryItem
+   488→   488→   488→  isSelf: boolean
+   489→   489→   489→  onEdit: () => void
+   490→   490→   490→  onChangeTeam: () => void
+   491→   491→   491→  onToggleActive: () => void
+   492→   492→   492→  onRemove: () => void
+   493→   493→   493→}) {
+   494→   494→   494→  const c = getColor(emp.avatarColor || 'violet')
+   495→   495→   495→  const team = emp.team
+   496→   496→   496→  const teamColor = team ? getColor(team.color) : null
+   497→   497→   497→
+   498→   498→   498→  return (
+   499→   499→   499→    <TableRow className={isSelf ? 'bg-violet-50/40 dark:bg-violet-950/15' : ''}>
+   500→   500→   500→      <TableCell className="pl-6">
+   501→   501→   501→        <div className="flex items-center gap-3 min-w-0">
+   502→   502→   502→          <div
+   503→   503→   503→            className={`shrink-0 w-9 h-9 rounded-full bg-gradient-to-br ${c.gradient} text-white flex items-center justify-center text-xs font-semibold`}
+   504→   504→   504→          >
+   505→   505→   505→            {getInitials(emp.name)}
+   506→   506→   506→          </div>
+   507→   507→   507→          <div className="min-w-0">
+   508→   508→   508→            <p className="font-medium truncate flex items-center gap-1.5">
+   509→   509→   509→              {emp.name}
+   510→   510→   510→              {isSelf && (
+   511→   511→   511→                <Badge className="bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300 text-[10px] px-1.5 py-0">
+   512→   512→   512→                  You
+   513→   513→   513→                </Badge>
+   514→   514→   514→              )}
+   515→   515→   515→              {emp.role === 'COMPANY_ADMIN' && (
+   516→   516→   516→                <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 text-[10px] px-1.5 py-0">
+   517→   517→   517→                  Admin
+   518→   518→   518→                </Badge>
+   519→   519→   519→              )}
+   520→   520→   520→            </p>
+   521→   521→   521→            <p className="text-xs text-muted-foreground truncate">{emp.email}</p>
+   522→   522→   522→          </div>
+   523→   523→   523→        </div>
+   524→   524→   524→      </TableCell>
+   525→   525→   525→      <TableCell>
+   526→   526→   526→        <span className="text-sm">{emp.title || <span className="text-muted-foreground">—</span>}</span>
+   527→   527→   527→      </TableCell>
+   528→   528→   528→      <TableCell>
+   529→   529→   529→        {team ? (
+   530→   530→   530→          <Badge variant="outline" className="gap-1.5">
+   531→   531→   531→            <span className={`w-2 h-2 rounded-full ${teamColor?.dot}`} />
+   532→   532→   532→            {team.name}
+   533→   533→   533→          </Badge>
+   534→   534→   534→        ) : (
+   535→   535→   535→          <span className="text-xs text-muted-foreground">No team</span>
+   536→   536→   536→        )}
+   537→   537→   537→      </TableCell>
+   538→   538→   538→      <TableCell>
+   539→   539→   539→        {emp.active ? (
+   540→   540→   540→          <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+   541→   541→   541→            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1" /> Active
+   542→   542→   542→          </Badge>
+   543→   543→   543→        ) : (
+   544→   544→   544→          <Badge className="bg-muted text-muted-foreground">
+   545→   545→   545→            <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground mr-1" /> Inactive
+   546→   546→   546→          </Badge>
+   547→   547→   547→        )}
+   548→   548→   548→      </TableCell>
+   549→   549→   549→      <TableCell className="text-sm text-muted-foreground tabular-nums">
+   550→   550→   550→        {format(new Date(emp.createdAt), 'MMM d, yyyy')}
+   551→   551→   551→      </TableCell>
+   552→   552→   552→      <TableCell className="pr-6 text-right">
+   553→   553→   553→        <DropdownMenu>
+   554→   554→   554→          <DropdownMenuTrigger asChild>
+   555→   555→   555→            <Button variant="ghost" size="icon" className="h-8 w-8">
+   556→   556→   556→              <MoreVertical className="w-4 h-4" />
+   557→   557→   557→            </Button>
+   558→   558→   558→          </DropdownMenuTrigger>
+   559→   559→   559→          <DropdownMenuContent align="end" className="w-48">
+   560→   560→   560→            <DropdownMenuItem onClick={onEdit}>
+   561→   561→   561→              <Pencil className="w-4 h-4" /> Edit details
+   562→   562→   562→            </DropdownMenuItem>
+   563→   563→   563→            <DropdownMenuItem onClick={onChangeTeam} disabled={isSelf}>
+   564→   564→   564→              <UserCog className="w-4 h-4" /> Change team
+   565→   565→   565→            </DropdownMenuItem>
+   566→   566→   566→            <DropdownMenuItem
+   567→   567→   567→              onClick={onToggleActive}
+   568→   568→   568→              disabled={isSelf}
+   569→   569→   569→            >
+   570→   570→   570→              {emp.active ? (
+   571→   571→   571→                <>
+   572→   572→   572→                  <UserMinus className="w-4 h-4" /> Deactivate
+   573→   573→   573→                </>
+   574→   574→   574→              ) : (
+   575→   575→   575→                <>
+   576→   576→   576→                  <UserCheck className="w-4 h-4" /> Reactivate
+   577→   577→   577→                </>
+   578→   578→   578→              )}
+   579→   579→   579→            </DropdownMenuItem>
+   580→   580→   580→            <DropdownMenuSeparator />
+   581→   581→   581→            <DropdownMenuItem
+   582→   582→   582→              variant="destructive"
+   583→   583→   583→              onClick={onRemove}
+   584→   584→   584→              disabled={isSelf}
+   585→   585→   585→            >
+   586→   586→   586→              <Trash2 className="w-4 h-4" /> Remove
+   587→   587→   587→            </DropdownMenuItem>
+   588→   588→   588→          </DropdownMenuContent>
+   589→   589→   589→        </DropdownMenu>
+   590→   590→   590→      </TableCell>
+   591→   591→   591→    </TableRow>
+   592→   592→   592→  )
+   593→   593→   593→}
+   594→   594→   594→
+   595→   595→   595→function EmployeeMobileCard({
+   596→   596→   596→  emp,
+   597→   597→   597→  isSelf,
+   598→   598→   598→  onEdit,
+   599→   599→   599→  onChangeTeam,
+   600→   600→   600→  onToggleActive,
+   601→   601→   601→  onRemove,
+   602→   602→   602→}: {
+   603→   603→   603→  emp: EmployeeDirectoryItem
+   604→   604→   604→  isSelf: boolean
+   605→   605→   605→  onEdit: () => void
+   606→   606→   606→  onChangeTeam: () => void
+   607→   607→   607→  onToggleActive: () => void
+   608→   608→   608→  onRemove: () => void
+   609→   609→   609→}) {
+   610→   610→   610→  const c = getColor(emp.avatarColor || 'violet')
+   611→   611→   611→  const team = emp.team
+   612→   612→   612→  const teamColor = team ? getColor(team.color) : null
+   613→   613→   613→
+   614→   614→   614→  return (
+   615→   615→   615→    <Card className={isSelf ? 'border-violet-200 dark:border-violet-800/50' : ''}>
+   616→   616→   616→      <CardContent className="p-4">
+   617→   617→   617→        <div className="flex items-start gap-3">
+   618→   618→   618→          <div
+   619→   619→   619→            className={`shrink-0 w-10 h-10 rounded-full bg-gradient-to-br ${c.gradient} text-white flex items-center justify-center text-sm font-semibold`}
+   620→   620→   620→          >
+   621→   621→   621→            {getInitials(emp.name)}
+   622→   622→   622→          </div>
+   623→   623→   623→          <div className="min-w-0 flex-1">
+   624→   624→   624→            <div className="flex items-center gap-1.5 flex-wrap">
+   625→   625→   625→              <p className="font-medium truncate">{emp.name}</p>
+   626→   626→   626→              {isSelf && (
+   627→   627→   627→                <Badge className="bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300 text-[10px] px-1.5 py-0">
+   628→   628→   628→                  You
+   629→   629→   629→                </Badge>
+   630→   630→   630→              )}
+   631→   631→   631→              {emp.role === 'COMPANY_ADMIN' && (
+   632→   632→   632→                <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 text-[10px] px-1.5 py-0">
+   633→   633→   633→                  Admin
+   634→   634→   634→                </Badge>
+   635→   635→   635→              )}
+   636→   636→   636→            </div>
+   637→   637→   637→            <p className="text-xs text-muted-foreground truncate flex items-center gap-1 mt-0.5">
+   638→   638→   638→              <Mail className="w-3 h-3" /> {emp.email}
+   639→   639→   639→            </p>
+   640→   640→   640→            <div className="flex items-center gap-2 flex-wrap mt-2">
+   641→   641→   641→              {emp.title && (
+   642→   642→   642→                <span className="text-xs text-muted-foreground">{emp.title}</span>
+   643→   643→   643→              )}
+   644→   644→   644→              {team && (
+   645→   645→   645→                <Badge variant="outline" className="gap-1.5 text-[10px]">
+   646→   646→   646→                  <span className={`w-2 h-2 rounded-full ${teamColor?.dot}`} />
+   647→   647→   647→                  {team.name}
+   648→   648→   648→                </Badge>
+   649→   649→   649→              )}
+   650→   650→   650→              {emp.active ? (
+   651→   651→   651→                <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 text-[10px]">
+   652→   652→   652→                  Active
+   653→   653→   653→                </Badge>
+   654→   654→   654→              ) : (
+   655→   655→   655→                <Badge className="bg-muted text-muted-foreground text-[10px]">Inactive</Badge>
+   656→   656→   656→              )}
+   657→   657→   657→            </div>
+   658→   658→   658→            <p className="text-[10px] text-muted-foreground mt-1.5">
+   659→   659→   659→              Joined {format(new Date(emp.createdAt), 'MMM d, yyyy')}
+   660→   660→   660→            </p>
+   661→   661→   661→          </div>
+   662→   662→   662→          <DropdownMenu>
+   663→   663→   663→            <DropdownMenuTrigger asChild>
+   664→   664→   664→              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+   665→   665→   665→                <MoreVertical className="w-4 h-4" />
+   666→   666→   666→              </Button>
+   667→   667→   667→            </DropdownMenuTrigger>
+   668→   668→   668→            <DropdownMenuContent align="end" className="w-48">
+   669→   669→   669→              <DropdownMenuItem onClick={onEdit}>
+   670→   670→   670→                <Pencil className="w-4 h-4" /> Edit details
+   671→   671→   671→              </DropdownMenuItem>
+   672→   672→   672→              <DropdownMenuItem onClick={onChangeTeam} disabled={isSelf}>
+   673→   673→   673→                <UserCog className="w-4 h-4" /> Change team
+   674→   674→   674→              </DropdownMenuItem>
+   675→   675→   675→              <DropdownMenuItem onClick={onToggleActive} disabled={isSelf}>
+   676→   676→   676→                {emp.active ? (
+   677→   677→   677→                  <>
+   678→   678→   678→                    <UserMinus className="w-4 h-4" /> Deactivate
+   679→   679→   679→                  </>
+   680→   680→   680→                ) : (
+   681→   681→   681→                  <>
+   682→   682→   682→                    <UserCheck className="w-4 h-4" /> Reactivate
+   683→   683→   683→                  </>
+   684→   684→   684→                )}
+   685→   685→   685→              </DropdownMenuItem>
+   686→   686→   686→              <DropdownMenuSeparator />
+   687→   687→   687→              <DropdownMenuItem variant="destructive" onClick={onRemove} disabled={isSelf}>
+   688→   688→   688→                <Trash2 className="w-4 h-4" /> Remove
+   689→   689→   689→              </DropdownMenuItem>
+   690→   690→   690→            </DropdownMenuContent>
+   691→   691→   691→          </DropdownMenu>
+   692→   692→   692→        </div>
+   693→   693→   693→      </CardContent>
+   694→   694→   694→    </Card>
+   695→   695→   695→  )
+   696→   696→   696→}
+   697→   697→   697→
+   698→   698→   698→function AddEmployeeDialog({
+   699→   699→   699→  open,
+   700→   700→   700→  onOpenChange,
+   701→   701→   701→  teams,
+   702→   702→   702→  onAdded,
+   703→   703→   703→}: {
+   704→   704→   704→  open: boolean
+   705→   705→   705→  onOpenChange: (v: boolean) => void
+   706→   706→   706→  teams: TeamManageItem[]
+   707→   707→   707→  onAdded: (result: AddEmployeeResult) => void
+   708→   708→   708→}) {
+   709→   709→   709→  const [name, setName] = useState('')
+   710→   710→   710→  const [email, setEmail] = useState('')
+   711→   711→   711→  const [title, setTitle] = useState('')
+   712→   712→   712→  const [teamId, setTeamId] = useState('')
+   713→   713→   713→  const [submitting, setSubmitting] = useState(false)
+   714→   714→   714→
+   715→   715→   715→  // Reset form when dialog opens
+   716→   716→   716→  useEffect(() => {
+   717→   717→   717→    if (open) {
+   718→   718→   718→      setName('')
+   719→   719→   719→      setEmail('')
+   720→   720→   720→      setTitle('')
+   721→   721→   721→      setTeamId(teams[0]?.id || '')
+   722→   722→   722→    }
+   723→   723→   723→  }, [open, teams])
+   724→   724→   724→
+   725→   725→   725→  const submit = async () => {
+   726→   726→   726→    if (!name.trim()) return toast.error('Please enter a name')
+   727→   727→   727→    if (!email.trim()) return toast.error('Please enter an email')
+   728→   728→   728→    if (!teamId) return toast.error('Please select a team')
+   729→   729→   729→
+   730→   730→   730→    setSubmitting(true)
+   731→   731→   731→    try {
+   732→   732→   732→      const res = await fetch('/api/admin/employees', {
+   733→   733→   733→        method: 'POST',
+   734→   734→   734→        headers: { 'Content-Type': 'application/json' },
+   735→   735→   735→        body: JSON.stringify({
+   736→   736→   736→          name: name.trim(),
+   737→   737→   737→          email: email.trim(),
+   738→   738→   738→          title: title.trim(),
+   739→   739→   739→          teamId,
+   740→   740→   740→        }),
+   741→   741→   741→      })
+   742→   742→   742→      const j = await res.json().catch(() => ({}))
+   743→   743→   743→      if (!res.ok) throw new Error(j.error || 'Failed to add employee')
+   744→   744→   744→      onAdded(j as AddEmployeeResult)
+   745→   745→   745→    } catch (e) {
+   746→   746→   746→      toast.error(e instanceof Error ? e.message : 'Failed to add employee')
+   747→   747→   747→    } finally {
+   748→   748→   748→      setSubmitting(false)
+   749→   749→   749→    }
+   750→   750→   750→  }
+   751→   751→   751→
+   752→   752→   752→  return (
+   753→   753→   753→    <Dialog open={open} onOpenChange={onOpenChange}>
+   754→   754→   754→      <DialogContent className="sm:max-w-md">
+   755→   755→   755→        <DialogHeader>
+   756→   756→   756→          <DialogTitle className="flex items-center gap-2">
+   757→   757→   757→            <span className="w-8 h-8 rounded-lg bg-violet-100 dark:bg-violet-950/50 text-violet-600 dark:text-violet-400 flex items-center justify-center">
+   758→   758→   758→              <Plus className="w-4 h-4" />
+   759→   759→   759→            </span>
+
+[showing lines 60-759 of 1102; use offset=760 with limit to continue reading]

@@ -25,6 +25,10 @@ import {
   UserCheck,
   AlertTriangle,
   Mail,
+  Upload,
+  Download,
+  FileSpreadsheet,
+  FileText,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -32,6 +36,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Table,
   TableBody,
@@ -93,6 +98,19 @@ type AddEmployeeResult = {
   }
 }
 
+type ImportResult = {
+  successCount: number
+  errors: { row: number; email?: string; error: string }[]
+  created: {
+    name: string
+    email: string
+    teamName: string
+    tempPassword: string
+  }[]
+  seats: number
+  employeeCount: number
+}
+
 export function EmployeesTab({
   onRefresh,
   adminId,
@@ -114,6 +132,8 @@ export function EmployeesTab({
   const [editOpen, setEditOpen] = useState(false)
   const [changeTeamOpen, setChangeTeamOpen] = useState(false)
   const [removeOpen, setRemoveOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [importResult, setImportResult] = useState<ImportResult | null>(null)
   const [activeEmployee, setActiveEmployee] = useState<EmployeeDirectoryItem | null>(null)
   const [tempPasswordInfo, setTempPasswordInfo] = useState<{ name: string; email: string; password: string } | null>(null)
 
@@ -206,6 +226,39 @@ export function EmployeesTab({
     }
   }
 
+  const handleExport = async () => {
+    try {
+      const res = await fetch('/api/admin/employees/export', { cache: 'no-store' })
+      const ct = res.headers.get('content-type') || ''
+      if (!res.ok || !ct.includes('text/csv')) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j.error || 'Failed to export')
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      // Prefer the filename from Content-Disposition, fall back to a default
+      const cd = res.headers.get('content-disposition') || ''
+      const match = cd.match(/filename="?([^";]+)"?/i)
+      a.download = match ? match[1] : 'focuspot-employees.csv'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast.success('CSV downloaded')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to export employees')
+    }
+  }
+
+  const handleImportComplete = (result: ImportResult) => {
+    setImportOpen(false)
+    setImportResult(result)
+    fetchData()
+    onRefresh()
+  }
+
   return (
     <div className="space-y-6">
       {/* Privacy Shield header */}
@@ -232,13 +285,31 @@ export function EmployeesTab({
             Add, edit, and manage your team members.
           </p>
         </div>
-        <Button
-          onClick={() => setAddOpen(true)}
-          className="bg-emerald-600 hover:bg-emerald-700"
-          disabled={!data || seatsLeft <= 0}
-        >
-          <Plus className="w-4 h-4" /> Add Employee
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setImportOpen(true)}
+            disabled={!data}
+            className="gap-1.5"
+          >
+            <Upload className="w-4 h-4" /> Import CSV
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleExport}
+            disabled={!data}
+            className="gap-1.5"
+          >
+            <Download className="w-4 h-4" /> Export CSV
+          </Button>
+          <Button
+            onClick={() => setAddOpen(true)}
+            className="bg-emerald-600 hover:bg-emerald-700"
+            disabled={!data || seatsLeft <= 0}
+          >
+            <Plus className="w-4 h-4" /> Add Employee
+          </Button>
+        </div>
       </div>
 
       {/* Seats progress */}
@@ -471,6 +542,20 @@ export function EmployeesTab({
         key={tempPasswordInfo?.password || 'empty'}
         info={tempPasswordInfo}
         onClose={() => setTempPasswordInfo(null)}
+      />
+
+      {/* CSV import dialog */}
+      <ImportCsvDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        teams={teams}
+        onImported={handleImportComplete}
+      />
+
+      {/* CSV import results */}
+      <ImportResultDialog
+        result={importResult}
+        onClose={() => setImportResult(null)}
       />
     </div>
   )
@@ -1093,6 +1178,380 @@ function TempPasswordDialog({
         <DialogFooter>
           <Button onClick={onClose} className="bg-emerald-600 hover:bg-emerald-700">
             <Check className="w-4 h-4" /> I&apos;ve shared it securely
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ============================================================
+// CSV import dialog + results dialog
+// ============================================================
+
+function downloadTextFile(filename: string, content: string, mime = 'text/csv') {
+  const blob = new Blob([content], { type: `${mime};charset=utf-8` })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+function ImportCsvDialog({
+  open,
+  onOpenChange,
+  teams,
+  onImported,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  teams: TeamManageItem[]
+  onImported: (result: ImportResult) => void
+}) {
+  const [csv, setCsv] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  // Reset on open
+  useEffect(() => {
+    if (open) setCsv('')
+  }, [open])
+
+  const handleDownloadTemplate = () => {
+    // If teams exist, build a template that lists one team name as an example
+    const teamExample = teams[0]?.name || 'Engineering'
+    const template = `name,email,title,teamId
+Jordan Rivera,jordan@yourcompany.com,Senior Designer,
+Sam Chen,sam@yourcompany.com,Product Manager,${teamExample}`
+    downloadTextFile('focuspot-employees-template.csv', template)
+    toast.success('Template downloaded')
+  }
+
+  const handleDownloadCurrent = async () => {
+    try {
+      const res = await fetch('/api/admin/employees/export', { cache: 'no-store' })
+      const ct = res.headers.get('content-type') || ''
+      if (!res.ok || !ct.includes('text/csv')) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j.error || 'Failed to export')
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const cd = res.headers.get('content-disposition') || ''
+      const match = cd.match(/filename="?([^";]+)"?/i)
+      a.download = match ? match[1] : 'focuspot-employees.csv'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast.success('Current employees downloaded')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to export')
+    }
+  }
+
+  const handleImport = async () => {
+    if (!csv.trim()) {
+      toast.error('Please paste CSV content first')
+      return
+    }
+    setSubmitting(true)
+    try {
+      const res = await fetch('/api/admin/employees/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csv }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(j.error || 'Failed to import')
+      onImported(j as ImportResult)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to import')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl max-h-[92vh] overflow-y-auto scrollbar-thin">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-lg">
+            <span className="w-8 h-8 rounded-lg bg-violet-100 dark:bg-violet-950/50 text-violet-600 dark:text-violet-400 flex items-center justify-center">
+              <Upload className="w-4 h-4" />
+            </span>
+            Import employees from CSV
+          </DialogTitle>
+          <DialogDescription>
+            Bulk-add employees by pasting CSV text. Each row creates an employee with a
+            random temporary password. <span className="font-medium">No data is uploaded</span>{' '}
+            until you click Import.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {/* Format helper */}
+          <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+            <p className="text-xs font-semibold mb-1.5 flex items-center gap-1.5">
+              <FileText className="w-3.5 h-3.5" /> CSV format
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Header row required: <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">name,email,title,teamId</code>.
+              Only <span className="font-medium">name</span> and <span className="font-medium">email</span> are required —
+              <span className="font-medium"> title</span> and <span className="font-medium">teamId</span> are optional. The{' '}
+              <span className="font-medium">teamId</span> column accepts either a team ID or a team name.
+            </p>
+            {teams.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {teams.slice(0, 6).map((t) => (
+                  <Badge key={t.id} variant="outline" className="text-[10px] gap-1">
+                    <span className={`w-1.5 h-1.5 rounded-full ${getColor(t.color).dot}`} />
+                    {t.name}
+                  </Badge>
+                ))}
+                {teams.length > 6 && (
+                  <Badge variant="outline" className="text-[10px]">
+                    +{teams.length - 6} more
+                  </Badge>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Quick actions */}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadTemplate}
+              className="gap-1.5"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" /> Download template
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadCurrent}
+              className="gap-1.5"
+            >
+              <Download className="w-3.5 h-3.5" /> Download current
+            </Button>
+          </div>
+
+          {/* CSV input */}
+          <div className="space-y-2">
+            <Label htmlFor="csv-input">Paste CSV content</Label>
+            <Textarea
+              id="csv-input"
+              placeholder={`name,email,title,teamId\nJordan Rivera,jordan@yourcompany.com,Senior Designer,\nSam Chen,sam@yourcompany.com,Product Manager,`}
+              value={csv}
+              onChange={(e) => setCsv(e.target.value)}
+              rows={10}
+              className="font-mono text-xs"
+              spellCheck={false}
+            />
+            <p className="text-xs text-muted-foreground">
+              {csv.trim() ? `${csv.trim().split('\n').length} line(s)` : 'Empty'} · each row
+              becomes one employee.
+            </p>
+          </div>
+
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-800/40">
+            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+            <p className="text-xs text-amber-900 dark:text-amber-200">
+              Seat limit: each successful row consumes one seat. Rows that exceed your plan&apos;s
+              seat limit will be rejected. Duplicate emails (already in the system or in the
+              same CSV) are also rejected.
+            </p>
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleImport}
+            disabled={submitting || !csv.trim()}
+            className="bg-emerald-600 hover:bg-emerald-700"
+          >
+            {submitting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" /> Importing…
+              </>
+            ) : (
+              <>
+                <Upload className="w-4 h-4" /> Import employees
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ImportResultDialog({
+  result,
+  onClose,
+}: {
+  result: ImportResult | null
+  onClose: () => void
+}) {
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
+
+  const copy = async (text: string, idx: number) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedIdx(idx)
+      setTimeout(() => setCopiedIdx(null), 2000)
+    } catch {
+      toast.error('Could not copy to clipboard')
+    }
+  }
+
+  const copyAll = async () => {
+    if (!result) return
+    const lines = result.created.map(
+      (c) => `${c.name},${c.email},${c.teamName},${c.tempPassword}`,
+    )
+    try {
+      await navigator.clipboard.writeText(
+        `name,email,team,password\n${lines.join('\n')}`,
+      )
+      toast.success('All credentials copied to clipboard')
+    } catch {
+      toast.error('Could not copy')
+    }
+  }
+
+  return (
+    <Dialog open={!!result} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-2xl max-h-[92vh] overflow-y-auto scrollbar-thin">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-lg">
+            <span className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+              <Check className="w-4 h-4" />
+            </span>
+            Import complete
+          </DialogTitle>
+          <DialogDescription>
+            Review the results. Share the temporary passwords with each new employee via a
+            secure channel — they will be asked to change it on first sign-in.
+          </DialogDescription>
+        </DialogHeader>
+
+        {result && (
+          <div className="space-y-4">
+            {/* Summary cards */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-lg border border-emerald-200/60 dark:border-emerald-800/40 bg-emerald-50/40 dark:bg-emerald-950/20 p-3">
+                <p className="text-[10px] text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">Created</p>
+                <p className="text-2xl font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
+                  {result.successCount}
+                </p>
+              </div>
+              <div className="rounded-lg border border-rose-200/60 dark:border-rose-800/40 bg-rose-50/40 dark:bg-rose-950/20 p-3">
+                <p className="text-[10px] text-rose-700 dark:text-rose-300 uppercase tracking-wide">Failed</p>
+                <p className="text-2xl font-bold tabular-nums text-rose-700 dark:text-rose-300">
+                  {result.errors.length}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Seats used</p>
+                <p className="text-2xl font-bold tabular-nums">
+                  {result.employeeCount}
+                  <span className="text-sm text-muted-foreground font-normal"> / {result.seats}</span>
+                </p>
+              </div>
+            </div>
+
+            {/* Created employees with temp passwords */}
+            {result.created.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-500" /> New employees &amp; credentials
+                  </p>
+                  <Button variant="outline" size="sm" onClick={copyAll} className="h-7 gap-1">
+                    <Copy className="w-3.5 h-3.5" /> Copy all
+                  </Button>
+                </div>
+                <div className="rounded-lg border border-border/60 max-h-64 overflow-y-auto scrollbar-thin divide-y divide-border/40">
+                  {result.created.map((c, idx) => (
+                    <div key={`${c.email}-${idx}`} className="p-3 flex items-center gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">{c.name}</p>
+                        <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                          <Mail className="w-3 h-3" /> {c.email}
+                        </p>
+                      </div>
+                      <Badge variant="outline" className="text-[10px] shrink-0">
+                        {c.teamName}
+                      </Badge>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Input
+                          value={c.tempPassword}
+                          readOnly
+                          className="h-7 w-32 font-mono text-xs bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/50"
+                        />
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-7 w-7 shrink-0"
+                          onClick={() => copy(c.tempPassword, idx)}
+                        >
+                          {copiedIdx === idx ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Errors */}
+            {result.errors.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-semibold flex items-center gap-1.5 text-rose-700 dark:text-rose-300">
+                  <AlertTriangle className="w-4 h-4" /> Errors ({result.errors.length})
+                </p>
+                <div className="rounded-lg border border-rose-200/60 dark:border-rose-800/40 bg-rose-50/40 dark:bg-rose-950/10 max-h-48 overflow-y-auto scrollbar-thin divide-y divide-rose-200/40 dark:divide-rose-800/30">
+                  {result.errors.map((err, idx) => (
+                    <div key={idx} className="p-2.5 text-xs">
+                      <p className="font-mono text-rose-700 dark:text-rose-300">
+                        Row {err.row}
+                        {err.email && ` · ${err.email}`}
+                      </p>
+                      <p className="text-rose-900/80 dark:text-rose-200/70 mt-0.5">{err.error}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {result.successCount === 0 && result.errors.length === 0 && (
+              <div className="text-center py-6 text-sm text-muted-foreground">
+                No rows processed. Check your CSV format and try again.
+              </div>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button onClick={onClose} className="bg-emerald-600 hover:bg-emerald-700">
+            <Check className="w-4 h-4" /> Done
           </Button>
         </DialogFooter>
       </DialogContent>

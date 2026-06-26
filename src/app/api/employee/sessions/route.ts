@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
+import { refreshEmployeeStats, refreshTeamStats, refreshCompanyStats, checkAchievements } from '@/lib/stats'
 
 // POST /api/employee/sessions
 // Called when a focus timer completes. Awards points and updates streak.
@@ -58,12 +59,21 @@ export async function POST(req: NextRequest) {
       data: {
         totalFocusHours: Math.round((user.totalFocusHours + durationMinutes / 60) * 10) / 10,
         totalPoints: user.totalPoints + points,
+        totalSessions: { increment: 1 },
         streak: newStreak,
         bestStreak: newBestStreak,
         lastFocusDate: todayStr,
       },
     }),
   ])
+
+  // Refresh materialized statistics (async, non-blocking)
+  refreshEmployeeStats(user.id, todayStr).catch(() => {})
+  if (user.teamId) refreshTeamStats(user.teamId, todayStr).catch(() => {})
+  refreshCompanyStats(user.companyId, todayStr).catch(() => {})
+
+  // Check for newly unlocked achievements
+  const newAchievements = await checkAchievements(user.id).catch(() => [])
 
   return NextResponse.json({
     session: {
@@ -78,6 +88,14 @@ export async function POST(req: NextRequest) {
       totalPoints: user.totalPoints + points,
       streakIncreased: newStreak > user.streak,
     },
+    newAchievements: newAchievements.map((a) => ({
+      id: a.id,
+      key: a.key,
+      name: a.name,
+      description: a.description,
+      icon: a.icon,
+      color: a.color,
+    })),
   })
 }
 

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
-import { Bell, CheckCircle2, Trophy, Gift, Info, Sparkles, CheckCheck, Loader2 } from 'lucide-react'
+import { Bell, CheckCircle2, Trophy, Gift, Info, Sparkles, CheckCheck, Loader2, Award, AlertTriangle } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -22,11 +22,19 @@ function iconFor(type: string) {
   switch (type) {
     case 'CHALLENGE_STARTED':
     case 'CHALLENGE_ENDED':
+    case 'CHALLENGE':
       return Trophy
     case 'CHALLENGE_WON':
+    case 'REWARD':
       return Gift
     case 'STREAK':
       return CheckCircle2
+    case 'SUCCESS':
+      return CheckCircle2
+    case 'WARNING':
+      return AlertTriangle
+    case 'ACHIEVEMENT':
+      return Award
     case 'INFO':
     default:
       return Info
@@ -36,14 +44,23 @@ function iconFor(type: string) {
 function tintFor(type: string) {
   switch (type) {
     case 'CHALLENGE_WON':
+    case 'REWARD':
       return 'bg-amber-100 dark:bg-amber-950/50 text-amber-600'
     case 'CHALLENGE_STARTED':
     case 'CHALLENGE_ENDED':
+    case 'CHALLENGE':
       return 'bg-violet-100 dark:bg-violet-950/50 text-violet-600'
     case 'STREAK':
       return 'bg-orange-100 dark:bg-orange-950/50 text-orange-600'
-    default:
+    case 'SUCCESS':
       return 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600'
+    case 'WARNING':
+      return 'bg-amber-100 dark:bg-amber-950/50 text-amber-600'
+    case 'ACHIEVEMENT':
+      return 'bg-violet-100 dark:bg-violet-950/50 text-violet-600'
+    case 'INFO':
+    default:
+      return 'bg-sky-100 dark:bg-sky-950/50 text-sky-600'
   }
 }
 

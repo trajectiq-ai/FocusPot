@@ -86,7 +86,16 @@ export type DashboardData = {
   privacyNote: string
 }
 
-export type TabKey = 'overview' | 'challenge' | 'teams' | 'employees' | 'settings' | 'history'
+export type TabKey =
+  | 'overview'
+  | 'challenge'
+  | 'teams'
+  | 'employees'
+  | 'rewards'
+  | 'analytics'
+  | 'audit'
+  | 'settings'
+  | 'history'
 
 // Employee directory item (PRIVACY SHIELD: directory only — no focus data)
 export type EmployeeDirectoryItem = {
@@ -130,3 +139,221 @@ export const TEAM_COLORS = [
 ] as const
 
 export type TeamColor = (typeof TEAM_COLORS)[number]
+
+// ============================================================
+// REWARDS — reward catalog + redemptions
+// ============================================================
+
+export type RewardType = 'GIFT_CARD' | 'MERCH' | 'EXPERIENCE' | 'CUSTOM'
+export type RedemptionStatus =
+  | 'PENDING'
+  | 'APPROVED'
+  | 'FULFILLED'
+  | 'DECLINED'
+  | 'EXPIRED'
+export type RedemptionTier = 'WINNER' | 'RUNNER_UP' | 'PARTICIPATION'
+
+export type RewardItem = {
+  id: string
+  name: string
+  description: string
+  type: RewardType
+  value: number
+  provider: string
+  inventory: number
+  imageColor: string
+  active: boolean
+  expiresAt: string | null
+  createdAt: string
+  updatedAt: string
+  redemptionCount: number
+  linkedChallengeCount: number
+}
+
+export type RedemptionItem = {
+  id: string
+  rewardId: string
+  userId: string
+  challengeId: string | null
+  companyId: string
+  tier: RedemptionTier
+  position: number
+  status: RedemptionStatus
+  code: string
+  notes: string
+  redeemedAt: string
+  fulfilledAt: string | null
+  expiresAt: string | null
+  reward: {
+    id: string
+    name: string
+    type: RewardType
+    value: number
+    provider: string
+    imageColor: string
+  }
+  user: {
+    id: string
+    name: string
+    email: string
+    avatarColor: string
+    teamId: string | null
+    team: { id: string; name: string; color: string } | null
+  }
+}
+
+export type Pagination = {
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+  hasNext: boolean
+  hasPrev: boolean
+}
+
+export type PaginatedRewards = {
+  data: RewardItem[]
+  pagination: Pagination
+}
+
+export type PaginatedRedemptions = {
+  data: RedemptionItem[]
+  pagination: Pagination
+}
+
+// ============================================================
+// ANALYTICS — persisted statistics
+// ============================================================
+
+export type AnalyticsDaily = {
+  date: string
+  focusHours: number
+  sessions: number
+  points: number
+  activeEmployees: number
+}
+
+export type AnalyticsWeekly = {
+  week: string
+  focusHours: number
+  sessions: number
+  points: number
+}
+
+export type AnalyticsMonthly = {
+  month: string
+  focusHours: number
+  sessions: number
+  points: number
+}
+
+export type AnalyticsTeamTrendPoint = {
+  date: string
+  focusHours: number
+  sessions: number
+  activeMembers: number
+}
+
+export type AnalyticsTeamTrend = {
+  teamId: string
+  teamName: string
+  teamColor: string
+  data: AnalyticsTeamTrendPoint[]
+}
+
+export type AnalyticsTotals = {
+  totalHours: number
+  totalSessions: number
+  totalPoints: number
+  avgActiveEmployees: number
+}
+
+export type AnalyticsData = {
+  daily: AnalyticsDaily[]
+  weekly: AnalyticsWeekly[]
+  monthly: AnalyticsMonthly[]
+  teamTrends: AnalyticsTeamTrend[]
+  totals: AnalyticsTotals
+}
+
+// ============================================================
+// AUDIT LOG
+// ============================================================
+
+export type AuditLogItem = {
+  id: string
+  userId: string | null
+  action: string
+  entityType: string
+  entityId: string | null
+  companyId: string | null
+  metadata: string
+  ipAddress: string
+  createdAt: string
+  user: { name: string; email: string } | null
+}
+
+export type PaginatedAuditLog = {
+  data: AuditLogItem[]
+  pagination: Pagination
+}
+
+// ============================================================
+// CHALLENGE (rich) — for badges + cancel/duplicate/archive actions
+// ============================================================
+
+export type ChallengeScoringModel =
+  | 'TOTAL_HOURS'
+  | 'AVG_PER_MEMBER'
+  | 'PARTICIPATION_RATE'
+  | 'WEIGHTED'
+
+export type ChallengeStatus =
+  | 'DRAFT'
+  | 'SCHEDULED'
+  | 'ACTIVE'
+  | 'COMPLETED'
+  | 'CANCELLED'
+
+export type ChallengeScope = 'COMPANY' | 'TEAM'
+
+export type ChallengeRich = {
+  id: string
+  name: string
+  description: string
+  startDate: string
+  endDate: string
+  prize: string
+  giftCardValue: number
+  giftCardCode: string
+  status: ChallengeStatus
+  scoringModel: ChallengeScoringModel
+  scoringWeights: string
+  scope: ChallengeScope
+  targetTeamId: string | null
+  isRecurring: boolean
+  recurrencePattern: string
+  archived: boolean
+  cancelledReason: string
+  cancelledAt: string | null
+  createdAt: string
+  winnerTeam: { id: string; name: string; color: string } | null
+  targetTeam?: { id: string; name: string; color: string } | null
+  rewards?: {
+    id: string
+    rewardId: string
+    tier: RedemptionTier
+    position: number
+    reward: {
+      id: string
+      name: string
+      type: RewardType
+      value: number
+      imageColor: string
+    }
+  }[]
+}
+
+export type ChallengesListResponse = {
+  challenges: ChallengeRich[]
+}
