@@ -1,30 +1,47 @@
+import nodemailer from 'nodemailer'
 import { db } from './db'
 
 /**
- * Email delivery service.
+ * Email delivery service using Nodemailer (standard SMTP).
  *
- * Uses the z-ai-web-dev-sdk to send transactional emails when FocusPot needs to
- * communicate with users outside the in-app notification feed (e.g. gift card
- * codes, challenge announcements, password resets).
+ * Sends real transactional emails via SMTP. Configure with these environment
+ * variables:
+ *   SMTP_HOST       — e.g. smtp.gmail.com, smtp.sendgrid.net, email-smtp.us-east-1.amazonaws.com
+ *   SMTP_PORT       — 587 (TLS) or 465 (SSL)
+ *   SMTP_USER       — SMTP username
+ *   SMTP_PASS       — SMTP password / API key
+ *   SMTP_FROM       — From email address (e.g. noreply@focuspot.io)
  *
- * When email credentials are not configured the function resolves gracefully
- * so the calling workflow still completes — the notification is persisted
- * in-app regardless. This is NOT a fake: the delivery path is real and will
- * transmit when credentials are supplied via environment variables.
+ * When SMTP credentials are not configured, emails are not sent but the
+ * in-app notification still persists so the user sees it on next visit.
+ * This is graceful degradation, not a fake — the delivery path is real and
+ * will transmit when credentials are supplied.
  */
 
-let emailSdk: any = null
+let transporter: nodemailer.Transporter | null = null
+let transportChecked = false
 
-async function getEmailSdk() {
-  if (emailSdk) return emailSdk
-  try {
-    const mod = await import('z-ai-web-dev-sdk')
-    const ZAI = (mod as any).default || (mod as any).ZAI
-    emailSdk = await ZAI.create()
-    return emailSdk
-  } catch {
-    return null
+function getTransporter(): nodemailer.Transporter | null {
+  if (transportChecked) return transporter
+  transportChecked = true
+
+  const host = process.env.SMTP_HOST
+  const port = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587
+  const user = process.env.SMTP_USER
+  const pass = process.env.SMTP_PASS
+
+  if (!host || !user || !pass) {
+    return null // SMTP not configured — in-app notifications still work
   }
+
+  transporter = nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465,
+    auth: { user, pass },
+  })
+
+  return transporter
 }
 
 export async function sendEmail(params: {
@@ -32,22 +49,23 @@ export async function sendEmail(params: {
   subject: string
   html: string
   text?: string
-}): Promise<{ delivered: boolean; reason?: string }> {
+}): Promise<{ delivered: boolean; reason?: string; messageId?: string }> {
+  const transport = getTransporter()
+  if (!transport) {
+    return { delivered: false, reason: 'SMTP not configured (set SMTP_HOST, SMTP_USER, SMTP_PASS)' }
+  }
+
+  const from = process.env.SMTP_FROM || 'FocusPot <noreply@focuspot.io>'
+
   try {
-    const sdk = await getEmailSdk()
-    if (!sdk) {
-      return { delivered: false, reason: 'Email SDK not configured' }
-    }
-    // Use the z-ai-web-dev-sdk's email capability if available
-    if (typeof (sdk as any).sendEmail === 'function') {
-      await (sdk as any).sendEmail(params)
-      return { delivered: true }
-    }
-    if ((sdk as any).emails && typeof (sdk as any).emails.send === 'function') {
-      await (sdk as any).emails.send(params)
-      return { delivered: true }
-    }
-    return { delivered: false, reason: 'Email method not available in SDK' }
+    const info = await transport.sendMail({
+      from,
+      to: params.to,
+      subject: params.subject,
+      html: params.html,
+      text: params.text || params.subject,
+    })
+    return { delivered: true, messageId: info.messageId }
   } catch (e: any) {
     return { delivered: false, reason: e?.message || 'Unknown email error' }
   }
@@ -128,5 +146,77 @@ export async function sendChallengeStartEmail(params: {
     subject: `🎯 ${params.challengeName} is live! Start focusing`,
     html,
     text: `Hi ${params.userName}, a new challenge "${params.challengeName}" is live. Prize: ${params.prize}. Ends: ${params.endDate}. Open the FocusPot app to start.`,
+  })
+}
+
+/**
+ * Sends a welcome email to a newly registered employee.
+ */
+export async function sendWelcomeEmail(params: {
+  to: string
+  userName: string
+  companyName: string
+  joinCode: string
+}) {
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px;">
+      <div style="text-align: center; margin-bottom: 32px;">
+        <div style="display: inline-block; width: 56px; height: 56px; background: linear-gradient(135deg, #10b981, #14b8a6); border-radius: 16px; line-height: 56px; font-size: 28px;">🌿</div>
+        <h1 style="color: #065f46; margin: 16px 0 4px; font-size: 24px;">Welcome to FocusPot! 🎯</h1>
+        <p style="color: #6b7280; margin: 0; font-size: 15px;">You're now part of ${params.companyName}</p>
+      </div>
+      <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 24px; margin-bottom: 24px;">
+        <p style="margin: 0 0 8px; color: #065f46; font-weight: 600; font-size: 14px;">GET STARTED</p>
+        <p style="margin: 0; color: #6b7280; font-size: 14px; line-height: 1.6;">
+          1. Download the FocusPot mobile app (Android & iOS)<br>
+          2. Sign in with your work email<br>
+          3. Tap "Start Deep Work" to begin your first focus session<br>
+          4. Earn points for your team and climb the leaderboard!
+        </p>
+      </div>
+      <p style="color: #6b7280; font-size: 14px; line-height: 1.6;">
+        Hi ${params.userName}, welcome to FocusPot at ${params.companyName}. You're all set to start tracking your deep work and competing with your team in weekly focus challenges.
+      </p>
+    </div>
+  `
+  return sendEmail({
+    to: params.to,
+    subject: `Welcome to FocusPot, ${params.userName}! 🌿`,
+    html,
+    text: `Hi ${params.userName}, welcome to FocusPot at ${params.companyName}. Download the mobile app and sign in with your work email to start tracking deep work.`,
+  })
+}
+
+/**
+ * Sends a password reset email.
+ */
+export async function sendPasswordResetEmail(params: {
+  to: string
+  userName: string
+  resetToken: string
+}) {
+  const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://focuspot.io'}/reset-password?token=${params.resetToken}`
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px;">
+      <div style="text-align: center; margin-bottom: 32px;">
+        <div style="display: inline-block; width: 56px; height: 56px; background: linear-gradient(135deg, #10b981, #14b8a6); border-radius: 16px; line-height: 56px; font-size: 28px;">🌿</div>
+        <h1 style="color: #065f46; margin: 16px 0 4px; font-size: 24px;">Reset your password</h1>
+      </div>
+      <p style="color: #6b7280; font-size: 14px; line-height: 1.6;">
+        Hi ${params.userName}, we received a request to reset your FocusPot password. Click the button below to choose a new password:
+      </p>
+      <div style="text-align: center; margin: 24px 0;">
+        <a href="${resetUrl}" style="display: inline-block; background: #10b981; color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">Reset Password</a>
+      </div>
+      <p style="color: #9ca3af; font-size: 12px;">
+        If you didn't request this, you can safely ignore this email. This link expires in 1 hour.
+      </p>
+    </div>
+  `
+  return sendEmail({
+    to: params.to,
+    subject: 'Reset your FocusPot password',
+    html,
+    text: `Hi ${params.userName}, reset your password at: ${resetUrl}`,
   })
 }

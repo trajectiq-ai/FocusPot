@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { hashPassword, generateTempPassword } from '@/lib/password'
+import { sendWelcomeEmail } from '@/lib/email'
 import { z } from 'zod'
 
 const addSchema = z.object({
@@ -71,7 +72,7 @@ export async function POST(req: NextRequest) {
 
   const admin = await db.user.findUnique({
     where: { id: session.id },
-    select: { companyId: true, company: { select: { seats: true, name: true, subscriptionStatus: true } } },
+    select: { companyId: true, company: { select: { seats: true, name: true, subscriptionStatus: true, joinCode: true } } },
   })
   if (!admin?.companyId || !admin.company) {
     return NextResponse.json({ error: 'No company assigned' }, { status: 400 })
@@ -118,6 +119,14 @@ export async function POST(req: NextRequest) {
       type: 'SUCCESS',
     },
   })
+
+  // Send welcome email with login instructions (non-blocking, graceful fallback)
+  sendWelcomeEmail({
+    to: user.email,
+    userName: user.name,
+    companyName: admin.company.name,
+    joinCode: admin.company.joinCode,
+  }).catch(() => {})
 
   return NextResponse.json({
     employee: {

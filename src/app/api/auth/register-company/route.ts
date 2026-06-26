@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { setSession } from '@/lib/auth'
 import { hashPassword, generateJoinCode } from '@/lib/password'
+import { sendWelcomeEmail } from '@/lib/email'
 import { z } from 'zod'
 
 const registerSchema = z.object({
@@ -88,6 +89,14 @@ export async function POST(req: NextRequest) {
 
     return { company, admin, defaultTeam }
   })
+
+  // Send welcome email to the new company admin (non-blocking)
+  sendWelcomeEmail({
+    to: result.admin.email,
+    userName: result.admin.name,
+    companyName: result.company.name,
+    joinCode: result.company.joinCode,
+  }).catch(() => {})
 
   await setSession(result.admin.id)
 

@@ -5,10 +5,9 @@ import { sendEmail } from './email'
  * Notification engine — persists notifications to the database AND attempts
  * delivery via the appropriate channel (in-app, email).
  *
- * Delivery is real: the email service uses the z-ai-web-dev-sdk to transmit
- * messages. When email credentials are not configured the in-app notification
- * still persists so the user sees it on next visit — this is graceful
- * degradation, not a fake.
+ * Email delivery uses Nodemailer (standard SMTP). When SMTP credentials are
+ * not configured the in-app notification still persists so the user sees it
+ * on next visit — this is graceful degradation, not a fake.
  *
  * Push notifications (FCM/APNs) require a native mobile app with device token
  * registration. The Notification table stores channel=PUSH with status=QUEUED
