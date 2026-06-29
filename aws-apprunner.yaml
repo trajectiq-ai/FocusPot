@@ -1,0 +1,53 @@
+version: 1.0
+runtime: docker
+build:
+  dockerfile: Dockerfile
+  dockerfile_path: Dockerfile
+run:
+  aws:role:
+    execution_role: ""
+  runtime: docker
+  command: bun server.js
+  port: 3000
+  env:
+    - name: NODE_ENV
+      value: production
+    - name: PORT
+      value: "3000"
+    - name: HOSTNAME
+      value: 0.0.0.0
+    - name: NEXT_TELEMETRY_DISABLED
+      value: "1"
+  env_vars_secrets:
+    - DATABASE_URL
+    - SESSION_SECRET
+    - SMTP_HOST
+    - SMTP_PORT
+    - SMTP_USER
+    - SMTP_PASS
+    - SMTP_FROM
+    - STRIPE_SECRET_KEY
+    - STRIPE_WEBHOOK_SECRET
+    - CRON_SECRET
+    - NEXT_PUBLIC_APP_URL
+  network:
+    ingress:
+      public: true
+    egress:
+      public: true
+  health_check:
+    type: HTTP
+    path: /api/status
+    interval: 30
+    timeout: 10
+    healthy_threshold: 1
+    unhealthy_threshold: 3
+  auto_scaling:
+    min_size: 1
+    max_size: 25
+    concurrency: 100
+    cpu: 1024
+    memory: 2048
+  observability:
+    tracing: false
+    logs: true

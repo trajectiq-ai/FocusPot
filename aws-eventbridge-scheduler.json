@@ -1,0 +1,24 @@
+{
+  "Comment": "FocusPot Scheduler — calls the /api/scheduler/run endpoint every 30 minutes",
+  "Name": "focuspot-scheduler",
+  "ScheduleExpression": "rate(30 minutes)",
+  "ScheduleExpressionTimezone": "UTC",
+  "FlexibleTimeWindow": {
+    "Mode": "FLEXIBLE",
+    "MaximumWindowInMinutes": 5
+  },
+  "Target": {
+    "Arn": "REPLACE_WITH_APP_RUNNER_URL",
+    "RoleArn": "REPLACE_WITH_EVENTBRIDGE_SCHEDULER_ROLE_ARN",
+    "HttpParameters": {
+      "Method": "GET",
+      "Path": "/api/scheduler/run",
+      "Headers": [
+        {
+          "Authorization": "Bearer REPLACE_WITH_CRON_SECRET"
+        }
+      ]
+    }
+  },
+  "State": "ENABLED"
+}

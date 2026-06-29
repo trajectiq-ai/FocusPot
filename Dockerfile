@@ -1,15 +1,13 @@
 # FocusPot — Multi-stage production Dockerfile
-# Builds a minimal standalone Next.js server with the scheduler
+# Compatible with AWS App Runner, ECS, and standard Docker deployments.
 
 # ===== Stage 1: Dependencies =====
 FROM oven/bun:1 AS deps
 WORKDIR /app
 
-# Copy package manifests
 COPY package.json bun.lockb* ./
 COPY prisma ./prisma
 
-# Install dependencies
 RUN bun install --frozen-lockfile
 
 # ===== Stage 2: Build =====
@@ -18,6 +16,18 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# Swap to PostgreSQL if DATABASE_URL is set to a postgresql URL (for AWS RDS)
+# Otherwise keep SQLite for local development
+RUN if [[ "$DATABASE_URL" == postgresql://* ]]; then \
+      sed -i 's/provider = "sqlite"/provider = "postgresql"/g' prisma/schema.prisma && \
+      echo "Schema provider set to postgresql"; \
+    else \
+      echo "Keeping SQLite for local dev"; \
+    fi
+
+# Generate Prisma client
+RUN bun run db:generate
 
 # Build the Next.js standalone output
 RUN bun run build
@@ -28,6 +38,8 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
 
 # Create a non-root user for security
 RUN addgroup --system --gid 1001 nodejs && \
@@ -44,24 +56,19 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 
-# Copy the scheduler mini-service
+# Copy the scheduler and scripts
 COPY --from=builder /app/mini-services ./mini-services
-
-# Copy the backup script
 COPY --from=builder /app/scripts ./scripts
 
-# Create data directory for SQLite (if used) and logs
+# Create data and logs directories
 RUN mkdir -p /app/data /app/logs && chown nextjs:nodejs /app/data /app/logs
 
 USER nextjs
 
 EXPOSE 3000
 
-ENV PORT=3000
-ENV HOSTNAME=0.0.0.0
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+# Health check — AWS App Runner uses this
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD bun -e "fetch('http://localhost:3000/api/status').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 # Start the Next.js server
