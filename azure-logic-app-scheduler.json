@@ -1,0 +1,68 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "logicAppName": {
+      "type": "string",
+      "defaultValue": "focuspot-scheduler",
+      "metadata": { "description": "Name of the Logic App that runs the scheduler" }
+    },
+    "appUrl": {
+      "type": "string",
+      "metadata": { "description": "The Container App URL (e.g., https://focuspot.xxx.eastus.azurecontainerapps.io)" }
+    },
+    "cronSecret": {
+      "type": "securestring",
+      "metadata": { "description": "The CRON_SECRET value that authorizes the scheduler endpoint" }
+    }
+  },
+  "variables": {
+    "schedulerEndpoint": "[concat(parameters('appUrl'), '/api/scheduler/run')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[parameters('logicAppName')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "actions": {
+            "Call_FocusPot_Scheduler": {
+              "type": "Http",
+              "inputs": {
+                "method": "GET",
+                "uri": "[variables('schedulerEndpoint')]",
+                "headers": {
+                  "Authorization": "[concat('Bearer ', parameters('cronSecret'))]"
+                }
+              },
+              "runAfter": {}
+            }
+          },
+          "triggers": {
+            "Recurrence": {
+              "type": "Recurrence",
+              "recurrence": {
+                "frequency": "Minute",
+                "interval": 30,
+                "startTime": "[utcNow('yyyy-MM-ddTHH:mm:ssZ')]",
+                "timeZone": "UTC"
+              }
+            }
+          },
+          "contentVersion": "1.0.0.0",
+          "outputs": {}
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "logicAppUrl": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Logic/workflows', parameters('logicAppName')), '2019-05-01').accessEndpoint]"
+    }
+  }
+}

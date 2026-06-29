@@ -62,3 +62,4 @@ agent-ctx/
 db/*.db
 db/*.db-journal
 .env.aws
+.env.azure
